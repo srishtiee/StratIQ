@@ -1,0 +1,14 @@
+{
+  "name": "stratiq",
+  "private": true,
+  "workspaces": [
+    "web",
+    "shared"
+  ],
+  "scripts": {
+    "dev": "npm --prefix web run dev",
+    "build": "npm --prefix web run build",
+    "lint": "npm --prefix web run lint",
+    "typecheck": "npm --prefix web exec tsc --noEmit"
+  }
+}
