@@ -8,10 +8,10 @@ export default async function ApprovalsPage() {
     <div className="page-stack">
       <section className="hero-card">
         <div>
-          <span className="eyebrow">Approval queue</span>
-          <h2 className="hero-title">Governed action review for executive-ready retention decisions.</h2>
+          <span className="eyebrow">Enterprise approvals</span>
+          <h2 className="hero-title">Keep execution accountable before any retention action enters the business.</h2>
           <p className="hero-copy">
-            This screen makes the approval lane explicit: ownership, impact, rationale, and timing are all visible before any downstream execution is allowed.
+            This screen is where enterprise buyers see operational realism: named owners, measurable impact, clear rationale, and a human checkpoint before execution moves downstream.
           </p>
         </div>
         <div className="hero-meta">
@@ -29,7 +29,7 @@ export default async function ApprovalsPage() {
           </article>
           <article className="meta-stat">
             <span>Execution mode</span>
-            <strong>Manual gate</strong>
+            <strong>Governed gate</strong>
           </article>
         </div>
       </section>

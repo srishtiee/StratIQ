@@ -8,7 +8,7 @@ import { LaneSection } from "@/components/lane-section";
 import { executeAction, submitAsk, submitFeedback } from "@/lib/service";
 
 const defaultPrompt =
-  "Assess Northstar Fiber's churn risk and prepare a governed retention action that can be reviewed by leadership this week.";
+  "Assess Northstar Fiber's churn risk and prepare a governed retention action that can be reviewed by leadership this week and adopted within an existing enterprise renewal workflow.";
 
 export default function WorkflowPage() {
   const [prompt, setPrompt] = useState(defaultPrompt);
@@ -57,17 +57,17 @@ export default function WorkflowPage() {
     <div className="page-stack">
       <section className="hero-card">
         <div>
-          <span className="eyebrow">Workflow foundation</span>
-          <h2 className="hero-title">Ask, Plan/Debate, and Approve in one visible decision flow.</h2>
+          <span className="eyebrow">Operational workflow</span>
+          <h2 className="hero-title">Move from signal to approved action without breaking enterprise process.</h2>
           <p className="hero-copy">
-            This page is designed as the clearest expression of the committed frontend ownership: request intake, reasoning visibility, approval flow, and stable contracts that can later swap from mocks to live services.
+            This flow is designed for real operators: intake, evidence review, recommendation synthesis, and approval capture all happen in one governed interface that can sit on top of an enterprise stack.
           </p>
         </div>
 
         <div className="hero-meta">
           <article className="meta-stat">
-            <span>Workflow mode</span>
-            <strong>Mock-backed</strong>
+            <span>Workflow fit</span>
+            <strong>Ops-ready</strong>
           </article>
           <article className="meta-stat">
             <span>API alignment</span>
@@ -79,9 +79,27 @@ export default function WorkflowPage() {
           </article>
           <article className="meta-stat">
             <span>Execution</span>
-            <strong>No side effects</strong>
+            <strong>Controlled handoff</strong>
           </article>
         </div>
+      </section>
+
+      <section className="proof-grid">
+        <article className="proof-card">
+          <span className="proof-card__label">Step 1</span>
+          <strong>Capture the business question in operational language</strong>
+          <p>Leaders ask for a decision, not just a model score, so the interface starts with a workflow-ready request.</p>
+        </article>
+        <article className="proof-card">
+          <span className="proof-card__label">Step 2</span>
+          <strong>Review evidence before acting</strong>
+          <p>The debate lane exposes the rationale, confidence, and source signals so teams can trust the recommendation.</p>
+        </article>
+        <article className="proof-card">
+          <span className="proof-card__label">Step 3</span>
+          <strong>Approve with accountability</strong>
+          <p>The action package includes owner, expected impact, and audit posture before it enters downstream systems.</p>
+        </article>
       </section>
 
       <div className="lane-grid">
@@ -97,7 +115,7 @@ export default function WorkflowPage() {
             />
             <div className="button-row">
               <button className="button-primary" type="button" onClick={handleSubmit} disabled={isPending}>
-                {isPending ? "Running workflow..." : "Run ask lane"}
+                {isPending ? "Running workflow..." : "Generate decision package"}
               </button>
               <button
                 className="button-secondary"
@@ -108,7 +126,7 @@ export default function WorkflowPage() {
               </button>
             </div>
             <p className="muted-copy">
-              Contracts mirror `POST /api/ask` so the UI can later switch to the FastAPI stub or a real orchestrator without a layout rewrite.
+              Contracts mirror `POST /api/ask` so the UI can later swap from mock orchestration to an enterprise service without a layout rewrite.
             </p>
           </div>
         </LaneSection>
@@ -140,7 +158,7 @@ export default function WorkflowPage() {
                   aria-label="Feedback note"
                   value={feedbackNote}
                   onChange={(event) => setFeedbackNote(event.target.value)}
-                  placeholder="Leave an approval or revision note for the debate lane."
+                  placeholder="Leave an operator note that could be handed to leadership, RevOps, or Customer Success."
                 />
                 <div className="button-row">
                   <button className="button-secondary" type="button" onClick={() => handleFeedback("revise")}>
@@ -170,7 +188,7 @@ export default function WorkflowPage() {
                 </button>
               </div>
               <div className="empty-state">
-                Audit note: Phase 1 stops at governed confirmation. The approval is recorded, but no downstream CRM or messaging action fires yet.
+                Audit note: Phase 1 stops at governed confirmation. The approval is recorded, but no downstream CRM, ticketing, or messaging side effect fires yet.
               </div>
             </>
           ) : (
@@ -180,6 +198,64 @@ export default function WorkflowPage() {
           )}
         </LaneSection>
       </div>
+
+      <section className="adoption-grid">
+        <article className="surface-card">
+          <div className="section-header">
+            <div>
+              <h3>How this fits existing enterprise workflows</h3>
+              <p>Investors and buyers will care less about the model alone and more about whether teams can adopt this with low operational disruption.</p>
+            </div>
+          </div>
+          <div className="highlight-list">
+            <div className="highlight-item">
+              <strong>Request comes from a real operator</strong>
+              <p className="muted-copy">
+                The workflow starts with a business decision request that could come from CS leadership, RevOps, or account teams.
+              </p>
+            </div>
+            <div className="highlight-item">
+              <strong>Recommendation is reviewed before execution</strong>
+              <p className="muted-copy">
+                The system keeps a visible governance gate instead of pushing silent automation into enterprise systems.
+              </p>
+            </div>
+            <div className="highlight-item">
+              <strong>Handoff is structured</strong>
+              <p className="muted-copy">
+                Approval packages are shaped so they could be handed to CRM, support, or pricing workflows in a later integration pass.
+              </p>
+            </div>
+          </div>
+        </article>
+
+        <article className="surface-card">
+          <div className="section-header">
+            <div>
+              <h3>What an investor should notice</h3>
+              <p>The product story here is adoption and process leverage, not just prediction quality.</p>
+            </div>
+          </div>
+          <div className="detail-metrics">
+            <div className="detail-metric">
+              <span>Buyer pain</span>
+              <strong>Slow decisions</strong>
+            </div>
+            <div className="detail-metric">
+              <span>Product value</span>
+              <strong>Faster action</strong>
+            </div>
+            <div className="detail-metric">
+              <span>Trust model</span>
+              <strong>Evidence visible</strong>
+            </div>
+            <div className="detail-metric">
+              <span>Adoption barrier</span>
+              <strong>No rip-and-replace</strong>
+            </div>
+          </div>
+        </article>
+      </section>
     </div>
   );
 }
