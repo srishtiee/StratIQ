@@ -1,0 +1,36 @@
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "stratiq-backend"
+version = "0.1.0"
+requires-python = ">=3.12"
+dependencies = [
+    "fastapi>=0.115.0",
+    "uvicorn[standard]>=0.30.0",
+    "supabase>=2.7.0",
+    "httpx>=0.27.0",
+    "python-dotenv>=1.0.0",
+    "pydantic>=2.7.0",
+    "pydantic-settings>=2.3.0",
+    "anthropic>=0.31.0",
+    "openai>=1.40.0",
+    "python-multipart>=0.0.9",
+    "pandas>=2.2.0",
+    "openpyxl>=3.1.0",
+    "tenacity>=8.3.0",
+    "reportlab>=4.2.0",
+    "email-validator>=2.2.0",
+]
+
+[tool.setuptools.packages.find]
+include = ["app*"]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=8.2.0",
+    "pytest-asyncio>=0.23.0",
+    "httpx>=0.27.0",
+    "ruff>=0.4.0",
+]
