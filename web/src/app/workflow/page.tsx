@@ -5,6 +5,7 @@ import type { ActionResult, WorkflowResponse } from "@shared/contracts";
 import { ActionCard } from "@/components/action-card";
 import { EvidencePanel } from "@/components/evidence-panel";
 import { LaneSection } from "@/components/lane-section";
+import { StatePanel } from "@/components/state-panel";
 import { executeAction, submitAsk, submitFeedback } from "@/lib/service";
 
 const defaultPrompt =
@@ -128,6 +129,13 @@ export default function WorkflowPage() {
             <p className="muted-copy">
               Contracts mirror `POST /api/ask` so the UI can later swap from mock orchestration to an enterprise service without a layout rewrite.
             </p>
+            {isPending ? (
+              <StatePanel
+                title="Generating workflow package"
+                message="StratIQ is collecting evidence, drafting the recommendation set, and preparing the approval package."
+                tone="loading"
+              />
+            ) : null}
           </div>
         </LaneSection>
 
@@ -168,13 +176,19 @@ export default function WorkflowPage() {
                     Record approval note
                   </button>
                 </div>
-                {lastFeedback ? <div className="empty-state">{lastFeedback}</div> : null}
+                {lastFeedback ? (
+                  <StatePanel
+                    title="Feedback recorded"
+                    message={lastFeedback}
+                  />
+                ) : null}
               </div>
             </>
           ) : (
-            <div className="empty-state">
-              Submit an ask to populate the evidence panel, reasoning cards, and decision proposal.
-            </div>
+            <StatePanel
+              title="Decision workspace is empty"
+              message="Submit an ask to populate the evidence panel, reasoning cards, and approval-ready proposal."
+            />
           )}
         </LaneSection>
 
@@ -187,14 +201,16 @@ export default function WorkflowPage() {
                   Capture approval
                 </button>
               </div>
-              <div className="empty-state">
-                Audit note: Phase 1 stops at governed confirmation. The approval is recorded, but no downstream CRM, ticketing, or messaging side effect fires yet.
-              </div>
+              <StatePanel
+                title="Execution boundary"
+                message="Phase 1 stops at governed confirmation. The approval is recorded, but no downstream CRM, ticketing, or messaging side effect fires yet."
+              />
             </>
           ) : (
-            <div className="empty-state">
-              Approval cards appear after the workflow has produced a recommendation package.
-            </div>
+            <StatePanel
+              title="No action package yet"
+              message="Approval cards appear after the workflow has produced a recommendation package."
+            />
           )}
         </LaneSection>
       </div>

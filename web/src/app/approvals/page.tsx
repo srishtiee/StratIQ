@@ -1,4 +1,5 @@
 import { ActionCard } from "@/components/action-card";
+import { StatePanel } from "@/components/state-panel";
 import { listApprovals } from "@/lib/service";
 
 export default async function ApprovalsPage() {
@@ -34,11 +35,18 @@ export default async function ApprovalsPage() {
         </div>
       </section>
 
-      <section className="approval-grid">
-        {approvals.map((approval) => (
-          <ActionCard key={approval.id} approval={approval} />
-        ))}
-      </section>
+      {approvals.length > 0 ? (
+        <section className="approval-grid">
+          {approvals.map((approval) => (
+            <ActionCard key={approval.id} approval={approval} />
+          ))}
+        </section>
+      ) : (
+        <StatePanel
+          title="Approval queue is clear"
+          message="New governed actions will appear here when a workflow produces an approval-ready package."
+        />
+      )}
     </div>
   );
 }

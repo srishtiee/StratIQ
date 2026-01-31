@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { StatusBadge } from "@/components/status-badge";
+import { StatePanel } from "@/components/state-panel";
 import { getCustomerById } from "@/lib/service";
 
 export default async function CustomerDetailPage({
@@ -84,11 +85,18 @@ export default async function CustomerDetailPage({
             </Link>
           </div>
           <div className="driver-list">
-            {customer.topDrivers.map((driver) => (
-              <div key={driver} className="driver-item">
-                {driver}
-              </div>
-            ))}
+            {customer.topDrivers.length > 0 ? (
+              customer.topDrivers.map((driver) => (
+                <div key={driver} className="driver-item">
+                  {driver}
+                </div>
+              ))
+            ) : (
+              <StatePanel
+                title="No primary drivers available"
+                message="Customer-level drivers will appear here once StratIQ receives enough signal history for this account."
+              />
+            )}
           </div>
         </section>
       </div>

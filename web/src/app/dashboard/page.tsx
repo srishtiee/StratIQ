@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { CustomerTable } from "@/components/customer-table";
 import { KpiCard } from "@/components/kpi-card";
+import { StatePanel } from "@/components/state-panel";
 import { getDashboardInsights, listCustomers } from "@/lib/service";
 
 export default async function DashboardPage() {
@@ -94,27 +95,34 @@ export default async function DashboardPage() {
               <p>Current portfolio segmentation designed for executive triage, owner routing, and approval readiness.</p>
             </div>
           </div>
-          <div className="risk-bar">
-            {insights.riskMix.map((entry) => {
-              const total = insights.riskMix.reduce((sum, item) => sum + item.count, 0);
-              const width = `${(entry.count / total) * 100}%`;
+          {insights.riskMix.length > 0 ? (
+            <div className="risk-bar">
+              {insights.riskMix.map((entry) => {
+                const total = insights.riskMix.reduce((sum, item) => sum + item.count, 0);
+                const width = `${(entry.count / total) * 100}%`;
 
-              return (
-                <div key={entry.label} className="risk-row">
-                  <div className="risk-row__meta">
-                    <span>{entry.label}</span>
-                    <span>{entry.count} accounts</span>
+                return (
+                  <div key={entry.label} className="risk-row">
+                    <div className="risk-row__meta">
+                      <span>{entry.label}</span>
+                      <span>{entry.count} accounts</span>
+                    </div>
+                    <div className="risk-row__track">
+                      <div
+                        className="risk-row__fill"
+                        style={{ width, background: entry.accent }}
+                      />
+                    </div>
                   </div>
-                  <div className="risk-row__track">
-                    <div
-                      className="risk-row__fill"
-                      style={{ width, background: entry.accent }}
-                    />
-                  </div>
-                </div>
-              );
-            })}
-          </div>
+                );
+              })}
+            </div>
+          ) : (
+            <StatePanel
+              title="No portfolio mix available"
+              message="Risk segmentation will appear here once the workspace receives account scoring data."
+            />
+          )}
         </article>
 
         <article className="surface-card">
@@ -124,13 +132,20 @@ export default async function DashboardPage() {
               <p>Fast proof points for investors, operators, and enterprise buyers evaluating product fit.</p>
             </div>
           </div>
-          <div className="highlight-list">
-            {insights.highlights.map((highlight) => (
-              <div key={highlight} className="highlight-item">
-                <p>{highlight}</p>
-              </div>
-            ))}
-          </div>
+          {insights.highlights.length > 0 ? (
+            <div className="highlight-list">
+              {insights.highlights.map((highlight) => (
+                <div key={highlight} className="highlight-item">
+                  <p>{highlight}</p>
+                </div>
+              ))}
+            </div>
+          ) : (
+            <StatePanel
+              title="No executive highlights yet"
+              message="Boardroom-ready proof points will appear here once risk monitoring runs."
+            />
+          )}
         </article>
       </section>
 
@@ -192,7 +207,14 @@ export default async function DashboardPage() {
         </article>
       </section>
 
-      <CustomerTable customers={customers} />
+      {customers.length > 0 ? (
+        <CustomerTable customers={customers} />
+      ) : (
+        <StatePanel
+          title="No accounts available"
+          message="Connect telemetry, CRM, and support data to populate the portfolio and customer drill-down views."
+        />
+      )}
     </div>
   );
 }
