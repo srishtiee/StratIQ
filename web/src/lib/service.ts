@@ -1,13 +1,24 @@
 import type {
   ActionResult,
+  ApprovalActionPayload,
   ApprovalRequest,
+  AuditRecord,
+  CustomerDetail,
   CustomerRiskSummary,
   DashboardInsights,
   FeedbackPayload,
   WorkflowRequest,
   WorkflowResponse,
 } from "@shared/contracts";
-import { approvals, customers, dashboardInsights, workflowTemplate } from "@/data/mock-data";
+import {
+  actionHistory,
+  approvals,
+  auditRecords,
+  customerDetails,
+  customers,
+  dashboardInsights,
+  workflowTemplate,
+} from "@/data/mock-data";
 
 const pause = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 const requestTimeoutMs = 1800;
@@ -45,7 +56,6 @@ async function fetchFromApi<T>(path: string, init?: RequestInit): Promise<T | nu
 
 export async function getDashboardInsights(): Promise<DashboardInsights> {
   const apiInsights = await fetchFromApi<DashboardInsights>("/api/insights");
-
   if (apiInsights) {
     return apiInsights;
   }
@@ -56,7 +66,6 @@ export async function getDashboardInsights(): Promise<DashboardInsights> {
 
 export async function listCustomers(): Promise<CustomerRiskSummary[]> {
   const apiCustomers = await fetchFromApi<CustomerRiskSummary[]>("/api/customers");
-
   if (apiCustomers) {
     return apiCustomers;
   }
@@ -65,20 +74,34 @@ export async function listCustomers(): Promise<CustomerRiskSummary[]> {
   return customers;
 }
 
-export async function getCustomerById(id: string): Promise<CustomerRiskSummary | undefined> {
-  const apiCustomer = await fetchFromApi<CustomerRiskSummary>(`/api/customers/${id}`);
-
+export async function getCustomerById(id: string): Promise<CustomerDetail | undefined> {
+  const apiCustomer = await fetchFromApi<CustomerDetail>(`/api/customers/${id}`);
   if (apiCustomer) {
     return apiCustomer;
   }
 
   await pause(120);
-  return customers.find((customer) => customer.id === id);
+  return customerDetails.find((customer) => customer.id === id);
 }
 
 export async function listApprovals(): Promise<ApprovalRequest[]> {
+  const apiApprovals = await fetchFromApi<ApprovalRequest[]>("/api/approvals");
+  if (apiApprovals) {
+    return apiApprovals;
+  }
+
   await pause(100);
   return approvals;
+}
+
+export async function listAuditRecords(): Promise<AuditRecord[]> {
+  const apiAudit = await fetchFromApi<AuditRecord[]>("/api/audit");
+  if (apiAudit) {
+    return apiAudit;
+  }
+
+  await pause(100);
+  return auditRecords;
 }
 
 export async function submitAsk(payload: WorkflowRequest): Promise<WorkflowResponse> {
@@ -86,28 +109,16 @@ export async function submitAsk(payload: WorkflowRequest): Promise<WorkflowRespo
     method: "POST",
     body: JSON.stringify(payload),
   });
-
   if (apiWorkflow) {
     return apiWorkflow;
   }
 
   await pause(180);
-
-  const targetCustomer =
-    customers.find((customer) => customer.id === payload.focusCustomerId) ?? customers[0];
-
   return {
     ...workflowTemplate,
-    requestId: `wf-${Date.now()}`,
+    requestId: `run-${Date.now()}`,
     submittedAt: new Date().toISOString(),
-    requestSummary: payload.prompt.trim()
-      ? payload.prompt
-      : `Review the highest-risk retention strategy for ${targetCustomer.name}.`,
-    approval: {
-      ...workflowTemplate.approval,
-      customerId: targetCustomer.id,
-      customerName: targetCustomer.name,
-    },
+    requestSummary: payload.prompt,
   };
 }
 
@@ -121,13 +132,11 @@ export async function submitFeedback(payload: FeedbackPayload) {
     method: "POST",
     body: JSON.stringify(payload),
   });
-
   if (apiFeedback) {
     return apiFeedback;
   }
 
   await pause(100);
-
   return {
     requestId: payload.requestId,
     verdict: payload.verdict,
@@ -136,24 +145,33 @@ export async function submitFeedback(payload: FeedbackPayload) {
   };
 }
 
-export async function executeAction(approvalId: string): Promise<ActionResult> {
+export async function executeAction(payload: ApprovalActionPayload): Promise<ActionResult> {
   const apiAction = await fetchFromApi<ActionResult>("/api/action", {
     method: "POST",
-    body: JSON.stringify({ approvalId }),
+    body: JSON.stringify(payload),
   });
-
   if (apiAction) {
     return apiAction;
   }
 
   await pause(180);
-
   return {
-    id: approvalId,
-    status: "queued",
-    summary: "Approval captured. The execution lane has queued the governed retention action.",
-    auditNote:
-      "Phase 1 prototype recorded the approval in the audit layer and stopped before external side effects.",
+    id: `action-${Date.now()}`,
+    approvalId: payload.approvalId,
+    status:
+      payload.decision === "reject"
+        ? "rejected"
+        : payload.decision === "execute"
+          ? "executed"
+          : payload.decision === "mark_ready"
+            ? "queued"
+            : "approved",
+    summary: "Approval state captured in the fallback action log.",
+    auditNote: "Mock action path recorded a local approval transition for demo continuity.",
     executedAt: new Date().toISOString(),
   };
+}
+
+export function getMockActionHistory() {
+  return actionHistory;
 }

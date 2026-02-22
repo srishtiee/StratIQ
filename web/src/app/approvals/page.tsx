@@ -1,4 +1,4 @@
-import { ActionCard } from "@/components/action-card";
+import { ApprovalsBoard } from "@/components/approvals-board";
 import { StatePanel } from "@/components/state-panel";
 import { listApprovals } from "@/lib/service";
 
@@ -36,11 +36,7 @@ export default async function ApprovalsPage() {
       </section>
 
       {approvals.length > 0 ? (
-        <section className="approval-grid">
-          {approvals.map((approval) => (
-            <ActionCard key={approval.id} approval={approval} />
-          ))}
-        </section>
+        <ApprovalsBoard approvals={approvals} />
       ) : (
         <StatePanel
           title="Approval queue is clear"

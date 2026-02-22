@@ -7,6 +7,7 @@ const links = [
   { href: "/dashboard", label: "Dashboard" },
   { href: "/workflow", label: "Workflow" },
   { href: "/approvals", label: "Approvals" },
+  { href: "/audit", label: "Audit" },
 ];
 
 export function TopNav() {

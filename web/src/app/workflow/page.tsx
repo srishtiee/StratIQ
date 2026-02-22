@@ -1,7 +1,12 @@
 "use client";
 
 import { useState, useTransition } from "react";
-import type { ActionResult, WorkflowResponse } from "@shared/contracts";
+import { useSearchParams } from "next/navigation";
+import type {
+  ActionResult,
+  ApprovalStatus,
+  WorkflowResponse,
+} from "@shared/contracts";
 import { ActionCard } from "@/components/action-card";
 import { EvidencePanel } from "@/components/evidence-panel";
 import { LaneSection } from "@/components/lane-section";
@@ -12,6 +17,7 @@ const defaultPrompt =
   "Assess Northstar Fiber's churn risk and prepare a governed retention action that can be reviewed by leadership this week and adopted within an existing enterprise renewal workflow.";
 
 export default function WorkflowPage() {
+  const searchParams = useSearchParams();
   const [prompt, setPrompt] = useState(defaultPrompt);
   const [workflow, setWorkflow] = useState<WorkflowResponse | null>(null);
   const [result, setResult] = useState<ActionResult | null>(null);
@@ -19,9 +25,54 @@ export default function WorkflowPage() {
   const [lastFeedback, setLastFeedback] = useState<string | null>(null);
   const [isPending, startTransition] = useTransition();
 
+  const handleAction = (decision: "approve" | "mark_ready" | "reject" | "execute") => {
+    if (!workflow) {
+      return;
+    }
+
+    startTransition(async () => {
+      const action = await executeAction({
+        approvalId: workflow.approval.id,
+        decision,
+      });
+      setResult(action);
+
+      const statusMap: Record<typeof decision, ApprovalStatus> = {
+        approve: "Approved",
+        mark_ready: "Ready",
+        reject: "Rejected",
+        execute: "Executed",
+      };
+
+      setWorkflow({
+        ...workflow,
+        approval: {
+          ...workflow.approval,
+          status: statusMap[decision],
+        },
+        actionHistory: [action, ...workflow.actionHistory],
+        auditRecords: [
+          {
+            id: `audit-local-${Date.now()}`,
+            runId: workflow.requestId,
+            approvalId: workflow.approval.id,
+            eventType: decision === "execute" ? "action" : "approval",
+            actor: "Operator",
+            message: action.summary,
+            createdAt: action.executedAt ?? new Date().toISOString(),
+          },
+          ...workflow.auditRecords,
+        ],
+      });
+    });
+  };
+
   const handleSubmit = () => {
     startTransition(async () => {
-      const response = await submitAsk({ prompt, focusCustomerId: "c-102" });
+      const response = await submitAsk({
+        prompt,
+        focusCustomerId: searchParams.get("customer") ?? "c-102",
+      });
       setWorkflow(response);
       setResult(null);
       setLastFeedback(null);
@@ -39,18 +90,22 @@ export default function WorkflowPage() {
         verdict,
         note: feedbackNote || "Feedback captured from workflow lane.",
       });
+      setWorkflow({
+        ...workflow,
+        status: verdict === "approve" ? "approved" : "needs_review",
+        auditRecords: [
+          {
+            id: `audit-feedback-${Date.now()}`,
+            runId: workflow.requestId,
+            eventType: "feedback",
+            actor: "Operator",
+            message: `Feedback recorded with verdict '${verdict}'.`,
+            createdAt: payload.recordedAt,
+          },
+          ...workflow.auditRecords,
+        ],
+      });
       setLastFeedback(`${payload.verdict.toUpperCase()}: ${payload.note}`);
-    });
-  };
-
-  const handleApprove = () => {
-    if (!workflow) {
-      return;
-    }
-
-    startTransition(async () => {
-      const action = await executeAction(workflow.approval.id);
-      setResult(action);
     });
   };
 
@@ -93,8 +148,8 @@ export default function WorkflowPage() {
         </article>
         <article className="proof-card">
           <span className="proof-card__label">Step 2</span>
-          <strong>Review evidence before acting</strong>
-          <p>The debate lane exposes the rationale, confidence, and source signals so teams can trust the recommendation.</p>
+          <strong>Review bounded reasoning before acting</strong>
+          <p>The center lane surfaces evidence, strategy options, risk critique, and final judgment in a reviewable sequence.</p>
         </article>
         <article className="proof-card">
           <span className="proof-card__label">Step 3</span>
@@ -146,21 +201,75 @@ export default function WorkflowPage() {
                 <strong>Request summary</strong>
                 <p style={{ marginTop: "0.4rem" }}>{workflow.requestSummary}</p>
               </div>
+
               <div className="agent-list">
-                {workflow.messages.map((message) => (
-                  <article key={message.id} className="agent-item">
-                    <div className="lane-card__title" style={{ marginBottom: "0.5rem" }}>
-                      <h3 style={{ fontSize: "1rem" }}>{message.agent}</h3>
-                      <span className="eyebrow">{Math.round(message.confidence * 100)}% confidence</span>
-                    </div>
-                    <p>{message.summary}</p>
-                    <p className="muted-copy" style={{ marginTop: "0.45rem" }}>
-                      {message.recommendation}
-                    </p>
-                  </article>
-                ))}
+                <article className="agent-item">
+                  <div className="lane-card__title" style={{ marginBottom: "0.5rem" }}>
+                    <h3 style={{ fontSize: "1rem" }}>Evidence review</h3>
+                    <span className="eyebrow">Analyst + Researcher</span>
+                  </div>
+                  <p>{workflow.summary}</p>
+                  <p className="muted-copy" style={{ marginTop: "0.45rem" }}>
+                    {workflow.targetEntity.name} is the current target entity for this bounded churn workflow.
+                  </p>
+                </article>
+
+                <article className="agent-item">
+                  <div className="lane-card__title" style={{ marginBottom: "0.5rem" }}>
+                    <h3 style={{ fontSize: "1rem" }}>{workflow.plannerOutput.agent}</h3>
+                    <span className="eyebrow">{workflow.plannerOutput.strategies.length} strategy paths</span>
+                  </div>
+                  <p>{workflow.plannerOutput.summary}</p>
+                  <div className="highlight-list" style={{ marginTop: "0.8rem" }}>
+                    {workflow.plannerOutput.strategies.map((strategy) => (
+                      <div key={strategy.id} className="highlight-item">
+                        <strong>{strategy.title}</strong>
+                        <p className="muted-copy" style={{ marginTop: "0.35rem" }}>
+                          {strategy.description}
+                        </p>
+                        <p className="muted-copy" style={{ marginTop: "0.35rem" }}>
+                          Owner: {strategy.owner} | Impact: {strategy.expectedImpact} | Window:{" "}
+                          {strategy.deliveryWindow}
+                        </p>
+                      </div>
+                    ))}
+                  </div>
+                </article>
+
+                <article className="agent-item">
+                  <div className="lane-card__title" style={{ marginBottom: "0.5rem" }}>
+                    <h3 style={{ fontSize: "1rem" }}>{workflow.riskReview.agent}</h3>
+                    <span className="eyebrow">{workflow.riskReview.verdict}</span>
+                  </div>
+                  <p>{workflow.riskReview.critique}</p>
+                  <div className="driver-list" style={{ marginTop: "0.8rem" }}>
+                    {workflow.riskReview.concerns.map((concern) => (
+                      <div key={concern} className="driver-item">
+                        {concern}
+                      </div>
+                    ))}
+                    {workflow.riskReview.requiredChecks.map((check) => (
+                      <div key={check} className="driver-item">
+                        Required check: {check}
+                      </div>
+                    ))}
+                  </div>
+                </article>
+
+                <article className="agent-item">
+                  <div className="lane-card__title" style={{ marginBottom: "0.5rem" }}>
+                    <h3 style={{ fontSize: "1rem" }}>{workflow.arbiterDecision.agent}</h3>
+                    <span className="eyebrow">{workflow.arbiterDecision.confidenceLabel}</span>
+                  </div>
+                  <p>{workflow.arbiterDecision.finalRecommendation}</p>
+                  <p className="muted-copy" style={{ marginTop: "0.45rem" }}>
+                    {workflow.arbiterDecision.rationale}
+                  </p>
+                </article>
               </div>
+
               <EvidencePanel evidence={workflow.evidence} />
+
               <div className="feedback-form">
                 <textarea
                   aria-label="Feedback note"
@@ -183,27 +292,63 @@ export default function WorkflowPage() {
                   />
                 ) : null}
               </div>
+
+              {workflow.auditRecords.length > 0 ? (
+                <div className="surface-card" style={{ padding: "1rem" }}>
+                  <div className="section-header">
+                    <div>
+                      <h3>Audit trail</h3>
+                      <p>Each bounded workflow step is logged so the decision package can be reviewed later.</p>
+                    </div>
+                  </div>
+                  <div className="audit-list">
+                    {workflow.auditRecords.map((record) => (
+                      <article key={record.id} className="audit-item">
+                        <div className="audit-item__meta">
+                          <strong>{record.eventType.replace("_", " ")}</strong>
+                          <span>{new Date(record.createdAt).toLocaleString()}</span>
+                        </div>
+                        <p>{record.message}</p>
+                        <p className="muted-copy">Actor: {record.actor}</p>
+                      </article>
+                    ))}
+                  </div>
+                </div>
+              ) : null}
             </>
           ) : (
             <StatePanel
               title="Decision workspace is empty"
-              message="Submit an ask to populate the evidence panel, reasoning cards, and approval-ready proposal."
+              message="Submit an ask to populate the evidence, strategy, critique, arbiter judgment, and approval package."
             />
           )}
         </LaneSection>
 
-        <LaneSection title="Approve / Execute" status={workflow ? "approved" : "ready"}>
+        <LaneSection title="Approve / Execute" status={workflow ? workflow.approval.status : "ready"}>
           {workflow ? (
             <>
-              <ActionCard approval={workflow.approval} result={result} />
+              <ActionCard approval={workflow.approval} result={result}>
+                <div className="button-row">
+                  <button className="button-secondary" type="button" onClick={() => handleAction("mark_ready")}>
+                    Mark ready
+                  </button>
+                  <button className="button-secondary" type="button" onClick={() => handleAction("reject")}>
+                    Reject
+                  </button>
+                  <button className="button-primary" type="button" onClick={() => handleAction("approve")}>
+                    Approve
+                  </button>
+                  <button className="button-primary" type="button" onClick={() => handleAction("execute")}>
+                    Execute log
+                  </button>
+                </div>
+              </ActionCard>
               <div className="button-row">
-                <button className="button-primary" type="button" onClick={handleApprove}>
-                  Capture approval
-                </button>
+                <LinkToApprovals />
               </div>
               <StatePanel
                 title="Execution boundary"
-                message="Phase 1 stops at governed confirmation. The approval is recorded, but no downstream CRM, ticketing, or messaging side effect fires yet."
+                message="Phase 1 persists the governed decision and action log. Downstream CRM, pricing, or ticketing automation remains intentionally out of band."
               />
             </>
           ) : (
@@ -273,5 +418,13 @@ export default function WorkflowPage() {
         </article>
       </section>
     </div>
+  );
+}
+
+function LinkToApprovals() {
+  return (
+    <a className="button-secondary" href="/approvals">
+      Open approval queue
+    </a>
   );
 }

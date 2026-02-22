@@ -1,17 +1,7 @@
 import type { Metadata } from "next";
-import { Fraunces, Space_Grotesk } from "next/font/google";
+import type { CSSProperties } from "react";
 import { TopNav } from "@/components/top-nav";
 import "./globals.css";
-
-const displayFont = Fraunces({
-  variable: "--font-display",
-  subsets: ["latin"],
-});
-
-const bodyFont = Space_Grotesk({
-  variable: "--font-body",
-  subsets: ["latin"],
-});
 
 export const metadata: Metadata = {
   title: "StratIQ",
@@ -24,7 +14,15 @@ export default function RootLayout({
   children: React.ReactNode;
 }>) {
   return (
-    <html lang="en" className={`${displayFont.variable} ${bodyFont.variable}`}>
+    <html
+      lang="en"
+      style={
+        {
+          "--font-display": '"Iowan Old Style", "Palatino Linotype", "Book Antiqua", Georgia, serif',
+          "--font-body": '"Avenir Next", "Segoe UI", "Helvetica Neue", Arial, sans-serif',
+        } as CSSProperties
+      }
+    >
       <body>
         <div className="app-shell">
           <TopNav />
