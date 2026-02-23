@@ -1,0 +1,9 @@
+customer_name,signal_type,value,recorded_at
+TestCo Alpha,usage,0.32,2025-04-10
+TestCo Alpha,nps,7,2025-04-15
+TestCo Beta,login,0.65,2025-04-12
+TestCo Beta,support,4,2025-04-20
+TestCo Gamma,usage,0.08,2025-04-15
+TestCo Delta,login,0.18,2025-04-18
+TestCo Delta,nps,4,2025-04-20
+TestCo Epsilon,csat,0.72,2025-04-22

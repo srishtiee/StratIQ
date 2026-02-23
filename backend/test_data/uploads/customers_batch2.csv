@@ -1,0 +1,5 @@
+name,segment,tier,arr,renewal_date,contract_start,status
+TestCo Zeta,enterprise,gold,310000,2026-11-15,2024-11-15,active
+TestCo Eta,smb,bronze,18000,2025-08-30,2024-09-01,active
+TestCo Theta,mid-market,silver,72000,2026-03-15,2024-03-15,active
+TestCo Iota,enterprise,platinum,680000,2027-04-30,2024-05-01,active

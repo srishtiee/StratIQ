@@ -1,0 +1,5 @@
+name,email,department,role,level,location,hire_date,skills,status
+Test User Six,test6@upload-test.com,Marketing,Marketing Manager,L4,Austin,2023-11-15,"hubspot,seo",active
+Test User Seven,test7@upload-test.com,Engineering,Engineering Manager,L6,Mountain View,2021-05-20,"leadership,python",active
+Test User Eight,test8@upload-test.com,Sales,Senior Account Executive,L5,New York,2022-04-10,"salesforce,negotiation",active
+Test User Nine,test9@upload-test.com,Product,Senior Product Manager,L5,Austin,2023-02-05,"sql,roadmapping",active

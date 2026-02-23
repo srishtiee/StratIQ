@@ -1,0 +1,6 @@
+employee_email,salary,bonus,equity,last_review_date,currency,effective_date
+test1@upload-test.com,150000,15000,25000,2024-12-01,USD,2025-01-01
+test2@upload-test.com,180000,25000,40000,2024-12-01,USD,2025-01-01
+test3@upload-test.com,148000,18000,30000,2024-12-01,USD,2025-01-01
+test4@upload-test.com,95000,30000,15000,2024-12-01,USD,2025-01-01
+test5@upload-test.com,225000,40000,80000,2024-12-01,USD,2025-01-01

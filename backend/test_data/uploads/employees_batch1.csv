@@ -1,0 +1,6 @@
+name,email,department,role,level,location,hire_date,skills,status
+Test User One,test1@upload-test.com,Engineering,Software Engineer,L4,Mountain View,2024-01-15,"python,react",active
+Test User Two,test2@upload-test.com,Engineering,Senior Software Engineer,L5,Mountain View,2023-06-10,"python,go,kubernetes",active
+Test User Three,test3@upload-test.com,Product,Product Manager,L4,Austin,2024-03-20,"sql,figma",active
+Test User Four,test4@upload-test.com,Sales,Account Executive,L3,New York,2024-08-01,"salesforce,outreach",active
+Test User Five,test5@upload-test.com,Engineering,Staff Engineer,L6,Mountain View,2022-09-01,"python,distributed-systems",active

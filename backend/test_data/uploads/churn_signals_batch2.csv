@@ -1,0 +1,7 @@
+customer_name,signal_type,value,recorded_at
+TestCo Zeta,usage,0.15,2025-04-25
+TestCo Zeta,nps,8,2025-04-26
+TestCo Eta,login,0.42,2025-04-28
+TestCo Theta,support,7,2025-04-29
+TestCo Iota,usage,0.05,2025-04-30
+TestCo Iota,csat,0.91,2025-05-01

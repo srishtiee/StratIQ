@@ -1,0 +1,5 @@
+name,category,value,target,unit,period
+Monthly Recurring Revenue,finance,378000,380000,USD,2025-05
+Attrition Rate,hr,11.5,12,%,2025-05
+Avg Customer Health Score,customer,68,70,points,2025-05
+ARR at Risk,customer,890000,800000,USD,2025-05
