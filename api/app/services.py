@@ -341,7 +341,7 @@ def run_bounded_workflow(session: Session, request: WorkflowRequest) -> Workflow
     for item in evidence:
         session.add(
             RunEvidence(
-                id=item.id,
+                id=f"{run_id}-{item.id}",
                 run_id=run_id,
                 source_type=item.sourceType,
                 source_id=item.sourceId,

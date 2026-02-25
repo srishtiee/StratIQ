@@ -135,6 +135,7 @@ def _append_demo_history(session: Session) -> None:
         submitted_at=datetime.fromisoformat("2026-04-29T16:05:00+00:00"),
     )
     session.add(workflow_run)
+    session.flush()
 
     session.add_all(
         [
@@ -200,6 +201,7 @@ def _append_demo_history(session: Session) -> None:
             created_at=datetime.fromisoformat("2026-04-29T16:10:00+00:00"),
         )
     )
+    session.flush()
     session.add(
         Action(
             id="action-001",
