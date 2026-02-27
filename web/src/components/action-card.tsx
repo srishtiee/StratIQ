@@ -4,14 +4,16 @@ import { StatusBadge } from "@/components/status-badge";
 export function ActionCard({
   approval,
   result,
+  className,
   children,
 }: {
   approval: ApprovalRequest;
   result?: ActionResult | null;
+  className?: string;
   children?: React.ReactNode;
 }) {
   return (
-    <article className="approval-card">
+    <article className={`approval-card${className ? ` ${className}` : ""}`}>
       <div className="approval-card__title">
         <div>
           <h3>{approval.actionTitle}</h3>

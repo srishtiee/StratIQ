@@ -3,10 +3,12 @@ import { StatusBadge } from "@/components/status-badge";
 export function LaneSection({
   title,
   status,
+  className,
   children,
 }: {
   title: string;
   status: string;
+  className?: string;
   children: React.ReactNode;
 }) {
   const badgeStatus =
@@ -24,7 +26,7 @@ export function LaneSection({
         : status;
 
   return (
-    <section className="lane-card">
+    <section className={`lane-card${className ? ` ${className}` : ""}`}>
       <div className="lane-card__title">
         <h3>{title}</h3>
         <StatusBadge value={badgeStatus as "ready" | "reviewing" | "approved"} />

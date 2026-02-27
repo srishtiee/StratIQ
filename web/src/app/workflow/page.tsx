@@ -27,6 +27,7 @@ export default function WorkflowPage() {
   const [activePanel, setActivePanel] = useState<"overview" | "strategy" | "risk" | "evidence" | "audit">(
     "overview",
   );
+  const [isPromptExpanded, setIsPromptExpanded] = useState(true);
   const [isPending, startTransition] = useTransition();
 
   useEffect(() => {
@@ -43,6 +44,7 @@ export default function WorkflowPage() {
         setResult(null);
         setPrompt(defaultPrompt);
         setLastFeedback(null);
+        setIsPromptExpanded(true);
         return;
       }
 
@@ -51,6 +53,7 @@ export default function WorkflowPage() {
       setResult(latestWorkflow.actionHistory[0] ?? null);
       setLastFeedback(null);
       setActivePanel("overview");
+      setIsPromptExpanded(false);
     });
 
     return () => {
@@ -110,6 +113,7 @@ export default function WorkflowPage() {
       setResult(null);
       setLastFeedback(null);
       setActivePanel("overview");
+      setIsPromptExpanded(false);
     });
   };
 
@@ -181,31 +185,71 @@ export default function WorkflowPage() {
       </section>
 
       <div className="lane-grid workflow-lane-grid">
-        <LaneSection title="Ask" status={workflow ? "reviewing" : "ready"}>
+        <LaneSection
+          title="Ask"
+          status={workflow ? "reviewing" : "ready"}
+          className="workflow-lane workflow-lane--sticky"
+        >
           <div className="workflow-form">
-            <label htmlFor="workflow-prompt" className="muted-copy">
-              Executive request
-            </label>
-            <textarea
-              id="workflow-prompt"
-              value={prompt}
-              onChange={(event) => setPrompt(event.target.value)}
-            />
-            <div className="button-row">
-              <button className="button-primary" type="button" onClick={handleSubmit} disabled={isPending}>
-                {isPending ? "Running workflow..." : "Generate decision package"}
-              </button>
-              <button
-                className="button-secondary"
-                type="button"
-                onClick={() => setPrompt(defaultPrompt)}
-              >
-                Reset prompt
-              </button>
-            </div>
-            <p className="muted-copy">
-              Contracts mirror `POST /api/ask` so the UI can later swap from mock orchestration to an enterprise service without a layout rewrite.
-            </p>
+            {workflow && !isPromptExpanded ? (
+              <>
+                <div className="workflow-prompt-summary">
+                  <span className="muted-copy">Current executive request</span>
+                  <p>{prompt}</p>
+                </div>
+                <div className="button-row button-row--compact">
+                  <button
+                    className="button-primary"
+                    type="button"
+                    onClick={handleSubmit}
+                    disabled={isPending}
+                  >
+                    {isPending ? "Running workflow..." : "Rerun package"}
+                  </button>
+                  <button
+                    className="button-secondary"
+                    type="button"
+                    onClick={() => setIsPromptExpanded(true)}
+                  >
+                    Edit request
+                  </button>
+                </div>
+                <p className="muted-copy workflow-prompt-note">
+                    The prompt can be edited and resubmitted to rerun the workflow with the same customer and update the existing package.
+                </p>
+              </>
+            ) : (
+              <>
+                <label htmlFor="workflow-prompt" className="muted-copy">
+                  Executive request
+                </label>
+                <textarea
+                  id="workflow-prompt"
+                  value={prompt}
+                  onChange={(event) => setPrompt(event.target.value)}
+                />
+                <div className="button-row">
+                  <button className="button-primary" type="button" onClick={handleSubmit} disabled={isPending}>
+                    {isPending ? "Running workflow..." : "Generate decision package"}
+                  </button>
+                  <button
+                    className="button-secondary"
+                    type="button"
+                    onClick={() => {
+                      setPrompt(defaultPrompt);
+                      if (workflow) {
+                        setIsPromptExpanded(false);
+                      }
+                    }}
+                  >
+                    {workflow ? "Collapse form" : "Reset prompt"}
+                  </button>
+                </div>
+                <p className="muted-copy workflow-prompt-note">
+                  Contracts mirror `POST /api/ask` so the UI can later swap from mock orchestration to an enterprise service without a layout rewrite.
+                </p>
+              </>
+            )}
             {isPending ? (
               <StatePanel
                 title="Generating workflow package"
@@ -216,7 +260,11 @@ export default function WorkflowPage() {
           </div>
         </LaneSection>
 
-        <LaneSection title="Plan / Debate" status={workflow ? workflow.status : "ready"}>
+        <LaneSection
+          title="Plan / Debate"
+          status={workflow ? workflow.status : "ready"}
+          className="workflow-lane workflow-lane--primary"
+        >
           {workflow ? (
             <>
               <div className="workflow-panel__header">
@@ -394,10 +442,14 @@ export default function WorkflowPage() {
           )}
         </LaneSection>
 
-        <LaneSection title="Approve / Execute" status={workflow ? workflow.approval.status : "ready"}>
+        <LaneSection
+          title="Approve / Execute"
+          status={workflow ? workflow.approval.status : "ready"}
+          className="workflow-lane workflow-lane--sticky"
+        >
           {workflow ? (
             <>
-              <ActionCard approval={workflow.approval} result={result}>
+              <ActionCard approval={workflow.approval} result={result} className="approval-card--workflow">
                 <div className="button-row">
                   <button className="button-secondary" type="button" onClick={() => handleAction("mark_ready")}>
                     Mark ready
@@ -413,13 +465,17 @@ export default function WorkflowPage() {
                   </button>
                 </div>
               </ActionCard>
-              <div className="button-row">
-                <LinkToApprovals />
+              <div className="workflow-side-notes">
+                <div className="button-row button-row--compact">
+                  <LinkToApprovals />
+                </div>
+                <div className="workflow-compact-note">
+                  <strong>Execution boundary</strong>
+                  <p>
+                    Phase 1 logs the governed decision and action handoff. CRM, pricing, and ticketing automation stay out of band for this base demo.
+                  </p>
+                </div>
               </div>
-              <StatePanel
-                title="Execution boundary"
-                message="Phase 1 persists the governed decision and action log. Downstream CRM, pricing, or ticketing automation remains intentionally out of band."
-              />
             </>
           ) : (
             <StatePanel

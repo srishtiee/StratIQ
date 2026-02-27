@@ -273,8 +273,31 @@ textarea {
 }
 
 .workflow-lane-grid {
-  grid-template-columns: 0.85fr 1.15fr 0.9fr;
+  grid-template-columns: 0.88fr 1.12fr 0.92fr;
   align-items: start;
+}
+
+.workflow-lane {
+  display: flex;
+  flex-direction: column;
+  align-self: start;
+  min-height: 43rem;
+}
+
+.workflow-lane--sticky {
+  position: sticky;
+  top: 6.4rem;
+}
+
+.workflow-lane .lane-card__body {
+  min-height: 0;
+  overflow: visible;
+  padding-right: 0;
+}
+
+.workflow-lane--primary .lane-card__body {
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr) auto;
 }
 
 .details-grid {
@@ -519,9 +542,11 @@ textarea {
   display: flex;
   flex-wrap: wrap;
   gap: 0.55rem;
+  align-items: center;
 }
 
 .workflow-tab {
+  flex: 0 0 auto;
   border: none;
   border-radius: 999px;
   padding: 0.6rem 0.9rem;
@@ -542,9 +567,10 @@ textarea {
 .workflow-panel-scroll {
   display: grid;
   gap: 0.8rem;
-  max-height: 44rem;
+  min-height: 0;
+  max-height: 28rem;
   overflow-y: auto;
-  padding-right: 0.2rem;
+  padding-right: 0.25rem;
 }
 
 .workflow-audit-card {
@@ -554,6 +580,24 @@ textarea {
 .workflow-form {
   display: grid;
   gap: 0.85rem;
+  align-content: start;
+}
+
+.workflow-prompt-summary {
+  display: grid;
+  gap: 0.55rem;
+  padding: 1rem;
+  border-radius: 1rem;
+  background: rgba(255, 255, 255, 0.76);
+  border: 1px solid rgba(23, 49, 63, 0.08);
+}
+
+.workflow-prompt-summary p {
+  line-height: 1.55;
+}
+
+.workflow-prompt-note {
+  font-size: 0.94rem;
 }
 
 .workflow-form textarea,
@@ -572,10 +616,16 @@ textarea {
   display: flex;
   flex-wrap: wrap;
   gap: 0.75rem;
+  align-items: center;
+}
+
+.button-row--compact {
+  gap: 0.6rem;
 }
 
 .button-primary,
 .button-secondary {
+  flex: 0 0 auto;
   display: inline-flex;
   align-items: center;
   justify-content: center;
@@ -644,6 +694,39 @@ textarea {
 .feedback-form {
   display: grid;
   gap: 0.8rem;
+}
+
+.workflow-side-notes {
+  display: grid;
+  gap: 0.8rem;
+}
+
+.workflow-compact-note {
+  display: grid;
+  gap: 0.4rem;
+  padding: 0.95rem 1rem;
+  border-radius: 1rem;
+  background: rgba(255, 255, 255, 0.72);
+  border: 1px solid rgba(23, 49, 63, 0.08);
+}
+
+.workflow-compact-note p {
+  color: var(--ink-soft);
+  line-height: 1.5;
+}
+
+.approval-card--workflow .detail-metrics {
+  margin-top: 0.75rem !important;
+  gap: 0.65rem;
+}
+
+.approval-card--workflow .detail-metric {
+  padding: 0.8rem;
+}
+
+.approval-card--workflow .detail-metric strong {
+  font-size: 1rem;
+  line-height: 1.35;
 }
 
 .evidence-relevance {
@@ -724,6 +807,24 @@ textarea {
 
   .workflow-lane-grid {
     grid-template-columns: 1fr;
+  }
+
+  .workflow-lane {
+    min-height: auto;
+  }
+
+  .workflow-lane--sticky {
+    position: static;
+  }
+
+  .workflow-lane .lane-card__body {
+    padding-right: 0;
+  }
+
+  .workflow-panel-scroll {
+    max-height: none;
+    overflow: visible;
+    padding-right: 0;
   }
 
   .top-nav__inner {
