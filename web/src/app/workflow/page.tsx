@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useTransition } from "react";
+import { useEffect, useState, useTransition } from "react";
 import { useSearchParams } from "next/navigation";
 import type {
   ActionResult,
@@ -11,19 +11,52 @@ import { ActionCard } from "@/components/action-card";
 import { EvidencePanel } from "@/components/evidence-panel";
 import { LaneSection } from "@/components/lane-section";
 import { StatePanel } from "@/components/state-panel";
-import { executeAction, submitAsk, submitFeedback } from "@/lib/service";
+import { executeAction, getLatestWorkflow, submitAsk, submitFeedback } from "@/lib/service";
 
 const defaultPrompt =
   "Assess Northstar Fiber's churn risk and prepare a governed retention action that can be reviewed by leadership this week and adopted within an existing enterprise renewal workflow.";
 
 export default function WorkflowPage() {
   const searchParams = useSearchParams();
+  const customerId = searchParams.get("customer") ?? "c-102";
   const [prompt, setPrompt] = useState(defaultPrompt);
   const [workflow, setWorkflow] = useState<WorkflowResponse | null>(null);
   const [result, setResult] = useState<ActionResult | null>(null);
   const [feedbackNote, setFeedbackNote] = useState("");
   const [lastFeedback, setLastFeedback] = useState<string | null>(null);
+  const [activePanel, setActivePanel] = useState<"overview" | "strategy" | "risk" | "evidence" | "audit">(
+    "overview",
+  );
   const [isPending, startTransition] = useTransition();
+
+  useEffect(() => {
+    let active = true;
+
+    startTransition(async () => {
+      const latestWorkflow = await getLatestWorkflow(customerId);
+      if (!active) {
+        return;
+      }
+
+      if (!latestWorkflow) {
+        setWorkflow(null);
+        setResult(null);
+        setPrompt(defaultPrompt);
+        setLastFeedback(null);
+        return;
+      }
+
+      setWorkflow(latestWorkflow);
+      setPrompt(latestWorkflow.requestSummary);
+      setResult(latestWorkflow.actionHistory[0] ?? null);
+      setLastFeedback(null);
+      setActivePanel("overview");
+    });
+
+    return () => {
+      active = false;
+    };
+  }, [customerId]);
 
   const handleAction = (decision: "approve" | "mark_ready" | "reject" | "execute") => {
     if (!workflow) {
@@ -71,11 +104,12 @@ export default function WorkflowPage() {
     startTransition(async () => {
       const response = await submitAsk({
         prompt,
-        focusCustomerId: searchParams.get("customer") ?? "c-102",
+        focusCustomerId: customerId,
       });
       setWorkflow(response);
       setResult(null);
       setLastFeedback(null);
+      setActivePanel("overview");
     });
   };
 
@@ -109,56 +143,44 @@ export default function WorkflowPage() {
     });
   };
 
+  const selectedStrategy = workflow
+    ? workflow.plannerOutput.strategies.find(
+        (strategy) => strategy.id === workflow.arbiterDecision.selectedStrategyId,
+      ) ?? workflow.plannerOutput.strategies[0]
+    : null;
+
   return (
     <div className="page-stack">
-      <section className="hero-card">
+      <section className="hero-card workflow-hero">
         <div>
           <span className="eyebrow">Operational workflow</span>
-          <h2 className="hero-title">Move from signal to approved action without breaking enterprise process.</h2>
+          <h2 className="hero-title workflow-hero__title">Bounded churn decision workspace</h2>
           <p className="hero-copy">
-            This flow is designed for real operators: intake, evidence review, recommendation synthesis, and approval capture all happen in one governed interface that can sit on top of an enterprise stack.
+            Review the ask, pressure-test the recommendation, and approve the next action without leaving the executive workflow.
           </p>
         </div>
 
-        <div className="hero-meta">
+        <div className="hero-meta workflow-hero__meta">
           <article className="meta-stat">
-            <span>Workflow fit</span>
-            <strong>Ops-ready</strong>
+            <span>Target</span>
+            <strong>{workflow?.targetEntity.name ?? "Northstar Fiber"}</strong>
           </article>
           <article className="meta-stat">
-            <span>API alignment</span>
-            <strong>Stable</strong>
+            <span>Workflow state</span>
+            <strong>{workflow?.status ?? "Ready"}</strong>
           </article>
           <article className="meta-stat">
-            <span>Approval safety</span>
-            <strong>Governed</strong>
+            <span>Primary action</span>
+            <strong>{selectedStrategy?.title ?? "Pending package"}</strong>
           </article>
           <article className="meta-stat">
-            <span>Execution</span>
-            <strong>Controlled handoff</strong>
+            <span>Approval</span>
+            <strong>{workflow?.approval.status ?? "Not created"}</strong>
           </article>
         </div>
       </section>
 
-      <section className="proof-grid">
-        <article className="proof-card">
-          <span className="proof-card__label">Step 1</span>
-          <strong>Capture the business question in operational language</strong>
-          <p>Leaders ask for a decision, not just a model score, so the interface starts with a workflow-ready request.</p>
-        </article>
-        <article className="proof-card">
-          <span className="proof-card__label">Step 2</span>
-          <strong>Review bounded reasoning before acting</strong>
-          <p>The center lane surfaces evidence, strategy options, risk critique, and final judgment in a reviewable sequence.</p>
-        </article>
-        <article className="proof-card">
-          <span className="proof-card__label">Step 3</span>
-          <strong>Approve with accountability</strong>
-          <p>The action package includes owner, expected impact, and audit posture before it enters downstream systems.</p>
-        </article>
-      </section>
-
-      <div className="lane-grid">
+      <div className="lane-grid workflow-lane-grid">
         <LaneSection title="Ask" status={workflow ? "reviewing" : "ready"}>
           <div className="workflow-form">
             <label htmlFor="workflow-prompt" className="muted-copy">
@@ -197,78 +219,149 @@ export default function WorkflowPage() {
         <LaneSection title="Plan / Debate" status={workflow ? workflow.status : "ready"}>
           {workflow ? (
             <>
-              <div className="empty-state">
-                <strong>Request summary</strong>
-                <p style={{ marginTop: "0.4rem" }}>{workflow.requestSummary}</p>
+              <div className="workflow-panel__header">
+                <div className="empty-state">
+                  <strong>Request summary</strong>
+                  <p style={{ marginTop: "0.4rem" }}>{workflow.requestSummary}</p>
+                </div>
+
+                <div className="workflow-tabs" role="tablist" aria-label="Workflow reasoning panels">
+                  <button
+                    className={`workflow-tab${activePanel === "overview" ? " is-active" : ""}`}
+                    type="button"
+                    onClick={() => setActivePanel("overview")}
+                  >
+                    Overview
+                  </button>
+                  <button
+                    className={`workflow-tab${activePanel === "strategy" ? " is-active" : ""}`}
+                    type="button"
+                    onClick={() => setActivePanel("strategy")}
+                  >
+                    Strategy
+                  </button>
+                  <button
+                    className={`workflow-tab${activePanel === "risk" ? " is-active" : ""}`}
+                    type="button"
+                    onClick={() => setActivePanel("risk")}
+                  >
+                    Critique
+                  </button>
+                  <button
+                    className={`workflow-tab${activePanel === "evidence" ? " is-active" : ""}`}
+                    type="button"
+                    onClick={() => setActivePanel("evidence")}
+                  >
+                    Evidence
+                  </button>
+                  <button
+                    className={`workflow-tab${activePanel === "audit" ? " is-active" : ""}`}
+                    type="button"
+                    onClick={() => setActivePanel("audit")}
+                  >
+                    Audit
+                  </button>
+                </div>
               </div>
 
-              <div className="agent-list">
-                <article className="agent-item">
-                  <div className="lane-card__title" style={{ marginBottom: "0.5rem" }}>
-                    <h3 style={{ fontSize: "1rem" }}>Evidence review</h3>
-                    <span className="eyebrow">Analyst + Researcher</span>
-                  </div>
-                  <p>{workflow.summary}</p>
-                  <p className="muted-copy" style={{ marginTop: "0.45rem" }}>
-                    {workflow.targetEntity.name} is the current target entity for this bounded churn workflow.
-                  </p>
-                </article>
-
-                <article className="agent-item">
-                  <div className="lane-card__title" style={{ marginBottom: "0.5rem" }}>
-                    <h3 style={{ fontSize: "1rem" }}>{workflow.plannerOutput.agent}</h3>
-                    <span className="eyebrow">{workflow.plannerOutput.strategies.length} strategy paths</span>
-                  </div>
-                  <p>{workflow.plannerOutput.summary}</p>
-                  <div className="highlight-list" style={{ marginTop: "0.8rem" }}>
-                    {workflow.plannerOutput.strategies.map((strategy) => (
-                      <div key={strategy.id} className="highlight-item">
-                        <strong>{strategy.title}</strong>
-                        <p className="muted-copy" style={{ marginTop: "0.35rem" }}>
-                          {strategy.description}
-                        </p>
-                        <p className="muted-copy" style={{ marginTop: "0.35rem" }}>
-                          Owner: {strategy.owner} | Impact: {strategy.expectedImpact} | Window:{" "}
-                          {strategy.deliveryWindow}
-                        </p>
+              <div className="workflow-panel-scroll">
+                {activePanel === "overview" ? (
+                  <div className="agent-list">
+                    <article className="agent-item">
+                      <div className="lane-card__title" style={{ marginBottom: "0.5rem" }}>
+                        <h3 style={{ fontSize: "1rem" }}>Evidence review</h3>
+                        <span className="eyebrow">Analyst + Researcher</span>
                       </div>
-                    ))}
-                  </div>
-                </article>
+                      <p>{workflow.summary}</p>
+                      <p className="muted-copy" style={{ marginTop: "0.45rem" }}>
+                        {workflow.targetEntity.name} is the current target entity for this bounded churn workflow.
+                      </p>
+                    </article>
 
-                <article className="agent-item">
-                  <div className="lane-card__title" style={{ marginBottom: "0.5rem" }}>
-                    <h3 style={{ fontSize: "1rem" }}>{workflow.riskReview.agent}</h3>
-                    <span className="eyebrow">{workflow.riskReview.verdict}</span>
-                  </div>
-                  <p>{workflow.riskReview.critique}</p>
-                  <div className="driver-list" style={{ marginTop: "0.8rem" }}>
-                    {workflow.riskReview.concerns.map((concern) => (
-                      <div key={concern} className="driver-item">
-                        {concern}
+                    <article className="agent-item">
+                      <div className="lane-card__title" style={{ marginBottom: "0.5rem" }}>
+                        <h3 style={{ fontSize: "1rem" }}>{workflow.arbiterDecision.agent}</h3>
+                        <span className="eyebrow">{workflow.arbiterDecision.confidenceLabel}</span>
                       </div>
-                    ))}
-                    {workflow.riskReview.requiredChecks.map((check) => (
-                      <div key={check} className="driver-item">
-                        Required check: {check}
-                      </div>
-                    ))}
+                      <p>{workflow.arbiterDecision.finalRecommendation}</p>
+                      <p className="muted-copy" style={{ marginTop: "0.45rem" }}>
+                        {workflow.arbiterDecision.rationale}
+                      </p>
+                    </article>
                   </div>
-                </article>
+                ) : null}
 
-                <article className="agent-item">
-                  <div className="lane-card__title" style={{ marginBottom: "0.5rem" }}>
-                    <h3 style={{ fontSize: "1rem" }}>{workflow.arbiterDecision.agent}</h3>
-                    <span className="eyebrow">{workflow.arbiterDecision.confidenceLabel}</span>
+                {activePanel === "strategy" ? (
+                  <article className="agent-item">
+                    <div className="lane-card__title" style={{ marginBottom: "0.5rem" }}>
+                      <h3 style={{ fontSize: "1rem" }}>{workflow.plannerOutput.agent}</h3>
+                      <span className="eyebrow">{workflow.plannerOutput.strategies.length} strategy paths</span>
+                    </div>
+                    <p>{workflow.plannerOutput.summary}</p>
+                    <div className="highlight-list" style={{ marginTop: "0.8rem" }}>
+                      {workflow.plannerOutput.strategies.map((strategy) => (
+                        <div key={strategy.id} className="highlight-item">
+                          <strong>{strategy.title}</strong>
+                          <p className="muted-copy" style={{ marginTop: "0.35rem" }}>
+                            {strategy.description}
+                          </p>
+                          <p className="muted-copy" style={{ marginTop: "0.35rem" }}>
+                            Owner: {strategy.owner} | Impact: {strategy.expectedImpact} | Window:{" "}
+                            {strategy.deliveryWindow}
+                          </p>
+                        </div>
+                      ))}
+                    </div>
+                  </article>
+                ) : null}
+
+                {activePanel === "risk" ? (
+                  <article className="agent-item">
+                    <div className="lane-card__title" style={{ marginBottom: "0.5rem" }}>
+                      <h3 style={{ fontSize: "1rem" }}>{workflow.riskReview.agent}</h3>
+                      <span className="eyebrow">{workflow.riskReview.verdict}</span>
+                    </div>
+                    <p>{workflow.riskReview.critique}</p>
+                    <div className="driver-list" style={{ marginTop: "0.8rem" }}>
+                      {workflow.riskReview.concerns.map((concern) => (
+                        <div key={concern} className="driver-item">
+                          {concern}
+                        </div>
+                      ))}
+                      {workflow.riskReview.requiredChecks.map((check) => (
+                        <div key={check} className="driver-item">
+                          Required check: {check}
+                        </div>
+                      ))}
+                    </div>
+                  </article>
+                ) : null}
+
+                {activePanel === "evidence" ? <EvidencePanel evidence={workflow.evidence} /> : null}
+
+                {activePanel === "audit" ? (
+                  <div className="surface-card workflow-audit-card">
+                    <div className="section-header">
+                      <div>
+                        <h3>Audit trail</h3>
+                        <p>Each bounded workflow step is logged so the decision package can be reviewed later.</p>
+                      </div>
+                    </div>
+                    <div className="audit-list">
+                      {workflow.auditRecords.map((record) => (
+                        <article key={record.id} className="audit-item">
+                          <div className="audit-item__meta">
+                            <strong>{record.eventType.replace("_", " ")}</strong>
+                            <span>{new Date(record.createdAt).toLocaleString()}</span>
+                          </div>
+                          <p>{record.message}</p>
+                          <p className="muted-copy">Actor: {record.actor}</p>
+                        </article>
+                      ))}
+                    </div>
                   </div>
-                  <p>{workflow.arbiterDecision.finalRecommendation}</p>
-                  <p className="muted-copy" style={{ marginTop: "0.45rem" }}>
-                    {workflow.arbiterDecision.rationale}
-                  </p>
-                </article>
+                ) : null}
               </div>
-
-              <EvidencePanel evidence={workflow.evidence} />
 
               <div className="feedback-form">
                 <textarea
@@ -292,29 +385,6 @@ export default function WorkflowPage() {
                   />
                 ) : null}
               </div>
-
-              {workflow.auditRecords.length > 0 ? (
-                <div className="surface-card" style={{ padding: "1rem" }}>
-                  <div className="section-header">
-                    <div>
-                      <h3>Audit trail</h3>
-                      <p>Each bounded workflow step is logged so the decision package can be reviewed later.</p>
-                    </div>
-                  </div>
-                  <div className="audit-list">
-                    {workflow.auditRecords.map((record) => (
-                      <article key={record.id} className="audit-item">
-                        <div className="audit-item__meta">
-                          <strong>{record.eventType.replace("_", " ")}</strong>
-                          <span>{new Date(record.createdAt).toLocaleString()}</span>
-                        </div>
-                        <p>{record.message}</p>
-                        <p className="muted-copy">Actor: {record.actor}</p>
-                      </article>
-                    ))}
-                  </div>
-                </div>
-              ) : null}
             </>
           ) : (
             <StatePanel
@@ -359,64 +429,6 @@ export default function WorkflowPage() {
           )}
         </LaneSection>
       </div>
-
-      <section className="adoption-grid">
-        <article className="surface-card">
-          <div className="section-header">
-            <div>
-              <h3>How this fits existing enterprise workflows</h3>
-              <p>Investors and buyers will care less about the model alone and more about whether teams can adopt this with low operational disruption.</p>
-            </div>
-          </div>
-          <div className="highlight-list">
-            <div className="highlight-item">
-              <strong>Request comes from a real operator</strong>
-              <p className="muted-copy">
-                The workflow starts with a business decision request that could come from CS leadership, RevOps, or account teams.
-              </p>
-            </div>
-            <div className="highlight-item">
-              <strong>Recommendation is reviewed before execution</strong>
-              <p className="muted-copy">
-                The system keeps a visible governance gate instead of pushing silent automation into enterprise systems.
-              </p>
-            </div>
-            <div className="highlight-item">
-              <strong>Handoff is structured</strong>
-              <p className="muted-copy">
-                Approval packages are shaped so they could be handed to CRM, support, or pricing workflows in a later integration pass.
-              </p>
-            </div>
-          </div>
-        </article>
-
-        <article className="surface-card">
-          <div className="section-header">
-            <div>
-              <h3>What an investor should notice</h3>
-              <p>The product story here is adoption and process leverage, not just prediction quality.</p>
-            </div>
-          </div>
-          <div className="detail-metrics">
-            <div className="detail-metric">
-              <span>Buyer pain</span>
-              <strong>Slow decisions</strong>
-            </div>
-            <div className="detail-metric">
-              <span>Product value</span>
-              <strong>Faster action</strong>
-            </div>
-            <div className="detail-metric">
-              <span>Trust model</span>
-              <strong>Evidence visible</strong>
-            </div>
-            <div className="detail-metric">
-              <span>Adoption barrier</span>
-              <strong>No rip-and-replace</strong>
-            </div>
-          </div>
-        </article>
-      </section>
     </div>
   );
 }

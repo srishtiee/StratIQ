@@ -104,6 +104,21 @@ export async function listAuditRecords(): Promise<AuditRecord[]> {
   return auditRecords;
 }
 
+export async function getLatestWorkflow(customerId?: string): Promise<WorkflowResponse | undefined> {
+  const query = customerId ? `?customer_id=${encodeURIComponent(customerId)}` : "";
+  const apiWorkflow = await fetchFromApi<WorkflowResponse>(`/api/workflows/latest${query}`);
+  if (apiWorkflow) {
+    return apiWorkflow;
+  }
+
+  await pause(120);
+  if (!customerId || workflowTemplate.targetEntity.id === customerId) {
+    return workflowTemplate;
+  }
+
+  return undefined;
+}
+
 export async function submitAsk(payload: WorkflowRequest): Promise<WorkflowResponse> {
   const apiWorkflow = await fetchFromApi<WorkflowResponse>("/api/ask", {
     method: "POST",

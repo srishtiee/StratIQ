@@ -26,6 +26,7 @@ from .services import (
     apply_action,
     get_customer_detail,
     get_dashboard_insights,
+    get_latest_workflow,
     list_approvals,
     list_audit_records,
     list_customers,
@@ -93,6 +94,14 @@ def ask(payload: WorkflowRequest, db: Session = Depends(get_db)) -> WorkflowResp
         return run_bounded_workflow(db, payload)
     except (ValueError, SQLAlchemyError) as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
+@app.get("/api/workflows/latest", response_model=WorkflowResponse)
+def latest_workflow(customer_id: str | None = None, db: Session = Depends(get_db)) -> WorkflowResponse:
+    workflow = get_latest_workflow(db, customer_id)
+    if workflow is None:
+        raise HTTPException(status_code=404, detail="Workflow not found")
+    return workflow
 
 
 @app.post("/api/action", response_model=ActionResult)

@@ -21,6 +21,7 @@ from .schemas import (
     ActionResult,
     ApprovalActionPayload,
     ApprovalRequest,
+    ArbiterDecision,
     AuditRecord as AuditRecordSchema,
     CustomerDetail,
     CustomerRiskSummary,
@@ -100,6 +101,10 @@ def _run_decision(session: Session, run_id: str) -> RunDecision | None:
 
 def _run_evidence(session: Session, run_id: str) -> list[RunEvidence]:
     return list(session.scalars(select(RunEvidence).where(RunEvidence.run_id == run_id)))
+
+
+def _approval_for_run(session: Session, run_id: str) -> Approval | None:
+    return session.scalar(select(Approval).where(Approval.run_id == run_id).limit(1))
 
 
 def _to_customer_summary(session: Session, customer: Customer) -> CustomerRiskSummary:
@@ -264,6 +269,37 @@ def get_customer_detail(session: Session, customer_id: str) -> CustomerDetail | 
     )
 
 
+def get_latest_workflow(session: Session, customer_id: str | None = None) -> WorkflowResponse | None:
+    customer = session.get(Customer, customer_id) if customer_id else None
+    if customer_id and customer is None:
+        return None
+
+    workflow_run = (
+        session.scalar(
+            select(WorkflowRun)
+            .where(WorkflowRun.customer_id == customer_id)
+            .order_by(desc(WorkflowRun.submitted_at))
+            .limit(1)
+        )
+        if customer_id
+        else session.scalar(select(WorkflowRun).order_by(desc(WorkflowRun.submitted_at)).limit(1))
+    )
+
+    if workflow_run is None:
+        return None
+
+    if customer is None:
+        customer = session.get(Customer, workflow_run.customer_id)
+    if customer is None:
+        return None
+
+    approval = _approval_for_run(session, workflow_run.id)
+    if approval is None:
+        return None
+
+    return _workflow_response_from_run(session, workflow_run, customer, approval)
+
+
 def _target_customer(session: Session, request: WorkflowRequest) -> Customer:
     if request.focusCustomerId:
         customer = session.get(Customer, request.focusCustomerId)
@@ -310,6 +346,77 @@ def _actions_for_approval(session: Session, approval: Approval) -> list[ActionRe
         )
         for action in _approval_actions(session, approval.id)
     ]
+
+
+def _workflow_response_from_run(
+    session: Session,
+    workflow_run: WorkflowRun,
+    customer: Customer,
+    approval: Approval,
+) -> WorkflowResponse:
+    decision = _run_decision(session, workflow_run.id)
+    if decision is None:
+        raise ValueError(f"No decision stored for workflow run {workflow_run.id}")
+
+    evidence_rows = _run_evidence(session, workflow_run.id)
+    audit_rows = list(
+        session.scalars(
+            select(AuditRecord)
+            .where(AuditRecord.run_id == workflow_run.id)
+            .order_by(desc(AuditRecord.created_at))
+        )
+    )
+
+    return WorkflowResponse(
+        requestId=workflow_run.id,
+        submittedAt=isoformat(workflow_run.submitted_at),
+        workflowType=workflow_run.workflow_type,
+        requestSummary=workflow_run.request_summary,
+        status=workflow_run.status,
+        targetEntity=TargetEntity(id=customer.id, name=customer.name, segment=customer.segment),
+        summary=workflow_run.summary,
+        evidence=[
+            {
+                "id": row.id,
+                "sourceType": row.source_type,
+                "sourceId": row.source_id,
+                "title": row.title,
+                "snippet": row.snippet,
+                "relevance": row.relevance,
+            }
+            for row in evidence_rows
+        ],
+        plannerOutput=PlannerOutput(
+            summary=decision.planner_summary,
+            strategies=decision.planner_options,
+        ),
+        riskReview=RiskReview(
+            verdict=decision.risk_verdict,
+            critique=decision.risk_critique,
+            concerns=decision.risk_concerns,
+            requiredChecks=decision.risk_required_checks,
+        ),
+        arbiterDecision=ArbiterDecision(
+            selectedStrategyId=decision.arbiter_strategy_id,
+            finalRecommendation=decision.arbiter_final_recommendation,
+            rationale=decision.arbiter_rationale,
+            confidenceLabel=decision.arbiter_confidence_label,
+        ),
+        approval=_approval_from_db(approval, customer),
+        actionHistory=_actions_for_approval(session, approval),
+        auditRecords=[
+            AuditRecordSchema(
+                id=record.id,
+                runId=record.run_id,
+                approvalId=record.approval_id,
+                eventType=record.event_type,
+                actor=record.actor,
+                message=record.message,
+                createdAt=isoformat(record.created_at),
+            )
+            for record in audit_rows
+        ],
+    )
 
 
 def run_bounded_workflow(session: Session, request: WorkflowRequest) -> WorkflowResponse:
