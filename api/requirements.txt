@@ -3,3 +3,5 @@ uvicorn==0.34.0
 pydantic==2.12.5
 SQLAlchemy==2.0.41
 psycopg[binary]==3.2.13
+openai==1.82.0
+anthropic==0.54.0

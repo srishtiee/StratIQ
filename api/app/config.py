@@ -20,6 +20,13 @@ class Settings:
         ),
     )
     auto_init_db: bool = _to_bool(os.getenv("STRATIQ_AUTO_INIT_DB"), True)
+    llm_enabled: bool = _to_bool(os.getenv("STRATIQ_LLM_ENABLED"), False)
+    llm_provider: str = os.getenv("STRATIQ_LLM_PROVIDER", "auto")
+    llm_max_tokens: int = int(os.getenv("STRATIQ_LLM_MAX_TOKENS", "900"))
+    openai_api_key: str | None = os.getenv("OPENAI_API_KEY")
+    anthropic_api_key: str | None = os.getenv("ANTHROPIC_API_KEY")
+    openai_model: str = os.getenv("STRATIQ_OPENAI_MODEL", "gpt-4o-mini")
+    anthropic_model: str = os.getenv("STRATIQ_ANTHROPIC_MODEL", "claude-3-5-sonnet-latest")
 
 
 settings = Settings()

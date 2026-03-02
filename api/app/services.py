@@ -1,9 +1,12 @@
 from datetime import datetime, timezone
 from uuid import uuid4
 
+from pydantic import ValidationError
 from sqlalchemy import desc, func, select
 from sqlalchemy.orm import Session
 
+from .config import settings
+from .llm import LLMRequestError, generate_json, llm_is_enabled
 from .models import (
     Action,
     Approval,
@@ -35,6 +38,177 @@ from .schemas import (
     WorkflowResponse,
     WorkflowRunSummary,
 )
+
+
+def _serialize_evidence_for_prompt(evidence: list[dict] | list) -> str:
+    lines: list[str] = []
+    for item in evidence:
+        title = getattr(item, "title", None) or item["title"]
+        snippet = getattr(item, "snippet", None) or item["snippet"]
+        relevance = getattr(item, "relevance", None) or item["relevance"]
+        lines.append(f"- {title}: {snippet} ({relevance})")
+    return "\n".join(lines)
+
+
+def _planner_prompt(
+    request: WorkflowRequest,
+    customer: Customer,
+    analyst,
+    evidence,
+    planner: PlannerOutput,
+) -> str:
+    strategy_lines = "\n".join(
+        [
+            (
+                f"- id={strategy.id} | title={strategy.title} | owner={strategy.owner} | "
+                f"expectedImpact={strategy.expectedImpact} | deliveryWindow={strategy.deliveryWindow}"
+            )
+            for strategy in planner.strategies
+        ]
+    )
+    return f"""
+You are the Planner Agent for StratIQ, an executive decision-support product.
+Refine the existing deterministic strategy package for a customer churn workflow.
+
+Return only valid JSON with this shape:
+{{
+  "summary": "string",
+  "strategies": [
+    {{
+      "id": "must exactly match one of the existing ids",
+      "title": "string",
+      "description": "string",
+      "owner": "string",
+      "expectedImpact": "string",
+      "deliveryWindow": "string"
+    }}
+  ]
+}}
+
+Rules:
+- Keep exactly {len(planner.strategies)} strategies.
+- Preserve the exact strategy ids and their order.
+- Keep output concise, executive-facing, and grounded in the provided evidence.
+- Do not invent new products, integrations, or customer facts.
+
+Workflow prompt: {request.prompt}
+Customer: {customer.name} ({customer.segment})
+Monthly revenue: {customer.monthly_revenue}
+Renewal date: {customer.renewal_date}
+Analyst summary: {analyst.summary}
+Top drivers:
+- {"\n- ".join(analyst.top_drivers)}
+
+Evidence:
+{_serialize_evidence_for_prompt(evidence)}
+
+Existing strategies:
+{strategy_lines}
+""".strip()
+
+
+def _risk_prompt(customer: Customer, planner: PlannerOutput, risk_review: RiskReview) -> str:
+    strategies = "\n".join(
+        [f"- {strategy.title}: {strategy.description}" for strategy in planner.strategies]
+    )
+    return f"""
+You are the Risk/Compliance Agent for StratIQ.
+Refine the critique for the proposed retention strategies.
+
+Return only valid JSON with this shape:
+{{
+  "verdict": "pass | caution | block",
+  "critique": "string",
+  "concerns": ["string"],
+  "requiredChecks": ["string"]
+}}
+
+Rules:
+- Keep the critique concise, operational, and review-oriented.
+- Surface only realistic concerns for an enterprise retention workflow.
+- If there are no blockers, keep concerns minimal rather than inventing risk.
+
+Customer: {customer.name}
+Current strategies:
+{strategies}
+
+Deterministic critique:
+{risk_review.critique}
+
+Existing concerns:
+- {"\n- ".join(risk_review.concerns)}
+
+Existing required checks:
+- {"\n- ".join(risk_review.requiredChecks or ["No additional checks recorded."])}
+""".strip()
+
+
+def _comms_prompt(customer: Customer, summary: str, arbiter: ArbiterDecision) -> str:
+    return f"""
+You are the Comms Agent for StratIQ.
+Rewrite the executive summary for a CXO-facing dashboard.
+
+Return only valid JSON with this shape:
+{{
+  "summary": "string"
+}}
+
+Rules:
+- Keep it to 2 sentences maximum.
+- Make it concise, trustworthy, and operational.
+- Mention the customer name and the recommended action.
+- Do not exaggerate confidence or invent evidence.
+
+Customer: {customer.name}
+Current summary: {summary}
+Final recommendation: {arbiter.finalRecommendation}
+Rationale: {arbiter.rationale}
+""".strip()
+
+
+def _maybe_llm_planner(
+    request: WorkflowRequest,
+    customer: Customer,
+    analyst,
+    evidence,
+    planner: PlannerOutput,
+) -> PlannerOutput:
+    if not llm_is_enabled():
+        return planner
+
+    try:
+        payload = generate_json(_planner_prompt(request, customer, analyst, evidence, planner))
+        candidate = PlannerOutput.model_validate(payload)
+        expected_ids = [strategy.id for strategy in planner.strategies]
+        actual_ids = [strategy.id for strategy in candidate.strategies]
+        if expected_ids != actual_ids:
+            return planner
+        return candidate
+    except (LLMRequestError, ValidationError, ValueError):
+        return planner
+
+
+def _maybe_llm_risk(customer: Customer, planner: PlannerOutput, risk_review: RiskReview) -> RiskReview:
+    if not llm_is_enabled():
+        return risk_review
+
+    try:
+        payload = generate_json(_risk_prompt(customer, planner, risk_review))
+        return RiskReview.model_validate(payload)
+    except (LLMRequestError, ValidationError, ValueError):
+        return risk_review
+
+
+def _maybe_llm_summary(customer: Customer, summary: str, arbiter: ArbiterDecision) -> str:
+    if not llm_is_enabled():
+        return summary
+
+    try:
+        payload = generate_json(_comms_prompt(customer, summary, arbiter), max_tokens=min(settings.llm_max_tokens, 300))
+        candidate = str(payload.get("summary", "")).strip()
+        return candidate or summary
+    except (LLMRequestError, ValidationError, ValueError, AttributeError):
+        return summary
 
 
 def isoformat(value: datetime | None) -> str:
@@ -427,9 +601,12 @@ def run_bounded_workflow(session: Session, request: WorkflowRequest) -> Workflow
     analyst = analyst_stage(customer, usage, tickets)
     evidence = researcher_stage(customer, usage, tickets)
     planner = planner_stage(customer, analyst)
+    planner = _maybe_llm_planner(request, customer, analyst, evidence, planner)
     risk_review = risk_stage(customer, analyst, planner)
+    risk_review = _maybe_llm_risk(customer, planner, risk_review)
     arbiter = arbiter_stage(customer, planner, risk_review)
     summary = comms_summary(customer, analyst, arbiter)
+    summary = _maybe_llm_summary(customer, summary, arbiter)
 
     run_id = f"run-{uuid4().hex[:10]}"
     submitted_at = datetime.now(timezone.utc)
