@@ -4,6 +4,18 @@ export type WorkflowType = "customer_churn" | "employee_attrition";
 
 export type WorkflowStatus = "pending" | "completed" | "needs_review" | "approved";
 
+export type IntentType =
+  | "churn_root_cause"
+  | "retention_action"
+  | "evidence_review"
+  | "approval_priority"
+  | "commercial_risk"
+  | "support_risk"
+  | "usage_decline"
+  | "adoption_risk"
+  | "renewal_risk"
+  | "general_churn";
+
 export type ApprovalStatus =
   | "Pending"
   | "Ready"
@@ -112,6 +124,7 @@ export interface WorkflowResponse {
   requestId: string;
   submittedAt: string;
   workflowType: WorkflowType;
+  detectedIntent: IntentType;
   requestSummary: string;
   status: WorkflowStatus;
   targetEntity: TargetEntity;

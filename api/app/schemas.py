@@ -3,6 +3,19 @@ from typing import Literal
 
 from pydantic import BaseModel, ConfigDict
 
+IntentType = Literal[
+    "churn_root_cause",
+    "retention_action",
+    "evidence_review",
+    "approval_priority",
+    "commercial_risk",
+    "support_risk",
+    "usage_decline",
+    "adoption_risk",
+    "renewal_risk",
+    "general_churn",
+]
+
 
 class EvidenceItem(BaseModel):
     id: str
@@ -114,6 +127,7 @@ class WorkflowResponse(BaseModel):
     requestId: str
     submittedAt: str
     workflowType: Literal["customer_churn", "employee_attrition"]
+    detectedIntent: IntentType
     requestSummary: str
     status: Literal["pending", "completed", "needs_review", "approved"]
     targetEntity: TargetEntity

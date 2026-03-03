@@ -54,7 +54,7 @@ async def lifespan(_: FastAPI):
 
 app = FastAPI(
     title=settings.app_name,
-    description="Bounded reasoning API for StratIQ executive churn workflows.",
+    description="Intent-aware decision API for StratIQ executive churn workflows.",
     version="0.2.0",
     lifespan=lifespan,
 )

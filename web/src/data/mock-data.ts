@@ -39,7 +39,7 @@ const sharedEvidence: EvidenceItem[] = [
     title: "Renewal window closes in 17 days",
     snippet:
       "The commercial decision window is active and no sponsor-level recovery meeting has been logged yet.",
-    relevance: "Raises urgency for a bounded, approval-ready retention action.",
+    relevance: "Raises urgency for an approval-ready retention action.",
   },
 ];
 
@@ -153,7 +153,7 @@ export const auditRecords: AuditRecord[] = [
     id: "audit-001",
     runId: "run-001",
     eventType: "workflow_run",
-    actor: "Comms Agent",
+    actor: "StratIQ",
     message: "Workflow package created for Northstar Fiber with approval-ready recommendation.",
     createdAt: "2026-04-30T10:35:00Z",
   },
@@ -340,6 +340,7 @@ export const workflowTemplate: WorkflowResponse = {
   requestId: "run-001",
   submittedAt: workflowRunSummary.submittedAt,
   workflowType: "customer_churn",
+  detectedIntent: "approval_priority",
   requestSummary:
     "Why did churn risk increase for Northstar Fiber, and which retention action should leadership approve first?",
   status: "completed",

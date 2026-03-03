@@ -1,11 +1,18 @@
+from __future__ import annotations
+
+from dataclasses import dataclass
 from datetime import datetime, timezone
+from difflib import SequenceMatcher
+import json
+import re
 from uuid import uuid4
 
-from pydantic import ValidationError
+from pydantic import BaseModel, Field, ValidationError
 from sqlalchemy import desc, func, select
 from sqlalchemy.orm import Session
 
 from .config import settings
+from .intent import IntentType, classify_intent, classify_intent_fallback, intent_label
 from .llm import LLMRequestError, generate_json, llm_is_enabled
 from .models import (
     Action,
@@ -29,6 +36,7 @@ from .schemas import (
     CustomerDetail,
     CustomerRiskSummary,
     DashboardInsights,
+    EvidenceItem,
     FeedbackPayload,
     PlannerOutput,
     RecordFeedbackResponse,
@@ -40,175 +48,55 @@ from .schemas import (
 )
 
 
-def _serialize_evidence_for_prompt(evidence: list[dict] | list) -> str:
-    lines: list[str] = []
-    for item in evidence:
-        title = getattr(item, "title", None) or item["title"]
-        snippet = getattr(item, "snippet", None) or item["snippet"]
-        relevance = getattr(item, "relevance", None) or item["relevance"]
-        lines.append(f"- {title}: {snippet} ({relevance})")
-    return "\n".join(lines)
+class LLMEvidenceItem(BaseModel):
+    sourceType: str
+    sourceId: str
+    title: str
+    snippet: str
+    relevance: str
 
 
-def _planner_prompt(
-    request: WorkflowRequest,
-    customer: Customer,
-    analyst,
-    evidence,
-    planner: PlannerOutput,
-) -> str:
-    strategy_lines = "\n".join(
-        [
-            (
-                f"- id={strategy.id} | title={strategy.title} | owner={strategy.owner} | "
-                f"expectedImpact={strategy.expectedImpact} | deliveryWindow={strategy.deliveryWindow}"
-            )
-            for strategy in planner.strategies
-        ]
-    )
-    return f"""
-You are the Planner Agent for StratIQ, an executive decision-support product.
-Refine the existing deterministic strategy package for a customer churn workflow.
-
-Return only valid JSON with this shape:
-{{
-  "summary": "string",
-  "strategies": [
-    {{
-      "id": "must exactly match one of the existing ids",
-      "title": "string",
-      "description": "string",
-      "owner": "string",
-      "expectedImpact": "string",
-      "deliveryWindow": "string"
-    }}
-  ]
-}}
-
-Rules:
-- Keep exactly {len(planner.strategies)} strategies.
-- Preserve the exact strategy ids and their order.
-- Keep output concise, executive-facing, and grounded in the provided evidence.
-- Do not invent new products, integrations, or customer facts.
-
-Workflow prompt: {request.prompt}
-Customer: {customer.name} ({customer.segment})
-Monthly revenue: {customer.monthly_revenue}
-Renewal date: {customer.renewal_date}
-Analyst summary: {analyst.summary}
-Top drivers:
-- {"\n- ".join(analyst.top_drivers)}
-
-Evidence:
-{_serialize_evidence_for_prompt(evidence)}
-
-Existing strategies:
-{strategy_lines}
-""".strip()
+class LLMAnalystOutput(BaseModel):
+    summary: str
+    topDrivers: list[str] = Field(default_factory=list)
+    kpis: list[str] = Field(default_factory=list)
 
 
-def _risk_prompt(customer: Customer, planner: PlannerOutput, risk_review: RiskReview) -> str:
-    strategies = "\n".join(
-        [f"- {strategy.title}: {strategy.description}" for strategy in planner.strategies]
-    )
-    return f"""
-You are the Risk/Compliance Agent for StratIQ.
-Refine the critique for the proposed retention strategies.
-
-Return only valid JSON with this shape:
-{{
-  "verdict": "pass | caution | block",
-  "critique": "string",
-  "concerns": ["string"],
-  "requiredChecks": ["string"]
-}}
-
-Rules:
-- Keep the critique concise, operational, and review-oriented.
-- Surface only realistic concerns for an enterprise retention workflow.
-- If there are no blockers, keep concerns minimal rather than inventing risk.
-
-Customer: {customer.name}
-Current strategies:
-{strategies}
-
-Deterministic critique:
-{risk_review.critique}
-
-Existing concerns:
-- {"\n- ".join(risk_review.concerns)}
-
-Existing required checks:
-- {"\n- ".join(risk_review.requiredChecks or ["No additional checks recorded."])}
-""".strip()
+class LLMResearcherOutput(BaseModel):
+    summary: str = ""
+    evidence: list[LLMEvidenceItem] = Field(default_factory=list)
 
 
-def _comms_prompt(customer: Customer, summary: str, arbiter: ArbiterDecision) -> str:
-    return f"""
-You are the Comms Agent for StratIQ.
-Rewrite the executive summary for a CXO-facing dashboard.
-
-Return only valid JSON with this shape:
-{{
-  "summary": "string"
-}}
-
-Rules:
-- Keep it to 2 sentences maximum.
-- Make it concise, trustworthy, and operational.
-- Mention the customer name and the recommended action.
-- Do not exaggerate confidence or invent evidence.
-
-Customer: {customer.name}
-Current summary: {summary}
-Final recommendation: {arbiter.finalRecommendation}
-Rationale: {arbiter.rationale}
-""".strip()
+class LLMApprovalOutput(BaseModel):
+    actionTitle: str
+    owner: str
+    priority: str = "High"
+    rationale: str
+    estimatedImpact: str
+    dueLabel: str
 
 
-def _maybe_llm_planner(
-    request: WorkflowRequest,
-    customer: Customer,
-    analyst,
-    evidence,
-    planner: PlannerOutput,
-) -> PlannerOutput:
-    if not llm_is_enabled():
-        return planner
-
-    try:
-        payload = generate_json(_planner_prompt(request, customer, analyst, evidence, planner))
-        candidate = PlannerOutput.model_validate(payload)
-        expected_ids = [strategy.id for strategy in planner.strategies]
-        actual_ids = [strategy.id for strategy in candidate.strategies]
-        if expected_ids != actual_ids:
-            return planner
-        return candidate
-    except (LLMRequestError, ValidationError, ValueError):
-        return planner
+class LLMWorkflowOutput(BaseModel):
+    intent: IntentType
+    analyst: LLMAnalystOutput
+    researcher: LLMResearcherOutput
+    planner: PlannerOutput
+    riskReview: RiskReview
+    arbiter: ArbiterDecision
+    summary: str
+    approval: LLMApprovalOutput
 
 
-def _maybe_llm_risk(customer: Customer, planner: PlannerOutput, risk_review: RiskReview) -> RiskReview:
-    if not llm_is_enabled():
-        return risk_review
-
-    try:
-        payload = generate_json(_risk_prompt(customer, planner, risk_review))
-        return RiskReview.model_validate(payload)
-    except (LLMRequestError, ValidationError, ValueError):
-        return risk_review
-
-
-def _maybe_llm_summary(customer: Customer, summary: str, arbiter: ArbiterDecision) -> str:
-    if not llm_is_enabled():
-        return summary
-
-    try:
-        payload = generate_json(_comms_prompt(customer, summary, arbiter), max_tokens=min(settings.llm_max_tokens, 300))
-        candidate = str(payload.get("summary", "")).strip()
-        return candidate or summary
-    except (LLMRequestError, ValidationError, ValueError, AttributeError):
-        return summary
+@dataclass
+class WorkflowDraft:
+    summary: str
+    evidence: list[EvidenceItem]
+    planner: PlannerOutput
+    risk_review: RiskReview
+    arbiter: ArbiterDecision
+    approval: LLMApprovalOutput
+    analysis_summary: str
+    source: str
 
 
 def isoformat(value: datetime | None) -> str:
@@ -281,14 +169,105 @@ def _approval_for_run(session: Session, run_id: str) -> Approval | None:
     return session.scalar(select(Approval).where(Approval.run_id == run_id).limit(1))
 
 
+def _normalize(value: str) -> str:
+    return " ".join(re.findall(r"[a-z0-9]+", value.lower()))
+
+
+def _compact(value: str) -> str:
+    return _normalize(value).replace(" ", "")
+
+
+def _customer_name_score(prompt: str, customer: Customer) -> float:
+    prompt_norm = _normalize(prompt)
+    name_norm = _normalize(customer.name)
+    if not prompt_norm or not name_norm:
+        return 0.0
+
+    if name_norm in prompt_norm:
+        return 1.0
+
+    name_tokens = name_norm.split()
+    if name_tokens and any(token in prompt_norm.split() for token in name_tokens):
+        overlap = sum(1 for token in name_tokens if token in prompt_norm.split())
+        return 0.72 + (overlap / len(name_tokens)) * 0.2
+
+    return SequenceMatcher(None, _compact(prompt), _compact(customer.name)).ratio()
+
+
+def _open_escalation_count(tickets: list[SupportTicket]) -> int:
+    return sum(1 for ticket in tickets if ticket.status != "Closed" and ticket.severity in {"P1", "P2"})
+
+
+def _pricing_ticket_count(tickets: list[SupportTicket]) -> int:
+    keywords = ("price", "pricing", "discount", "competitor", "benchmark", "commercial")
+    return sum(1 for ticket in tickets if any(keyword in ticket.snippet.lower() for keyword in keywords))
+
+
+def _approval_priority_score(session: Session, customer: Customer) -> float:
+    latest_approval = _latest_approval(session, customer.id)
+    approval_bonus = 0.25 if latest_approval and latest_approval.status in {"Pending", "Ready"} else 0
+    return customer.churn_probability + approval_bonus + (customer.monthly_revenue / 1_000_000)
+
+
+def _target_customer(session: Session, request: WorkflowRequest, intent: IntentType) -> Customer:
+    customers = list(session.scalars(select(Customer)))
+    if not customers:
+        raise ValueError("No customers are available in the database")
+
+    if request.focusCustomerId:
+        customer = session.get(Customer, request.focusCustomerId)
+        if customer:
+            return customer
+
+    scored = sorted(
+        ((_customer_name_score(request.prompt, customer), customer) for customer in customers),
+        key=lambda item: item[0],
+        reverse=True,
+    )
+    if scored and scored[0][0] >= 0.78:
+        return scored[0][1]
+
+    if "highest risk" in request.prompt.lower() or intent == "general_churn":
+        return max(customers, key=lambda customer: customer.churn_probability)
+
+    if intent == "approval_priority":
+        return max(customers, key=lambda customer: _approval_priority_score(session, customer))
+
+    if intent == "support_risk":
+        return max(customers, key=lambda customer: _open_escalation_count(_customer_tickets(session, customer.id)))
+
+    if intent in {"usage_decline", "adoption_risk"}:
+        return min(customers, key=lambda customer: _latest_usage(session, customer.id).usage_change_pct)
+
+    if intent == "commercial_risk":
+        return max(customers, key=lambda customer: _pricing_ticket_count(_customer_tickets(session, customer.id)))
+
+    if intent == "renewal_risk":
+        return max(
+            customers,
+            key=lambda customer: (
+                customer.churn_probability,
+                -len(customer.renewal_date),
+                customer.renewal_date,
+            ),
+        )
+
+    return max(customers, key=lambda customer: customer.churn_probability)
+
+
 def _to_customer_summary(session: Session, customer: Customer) -> CustomerRiskSummary:
     usage = _latest_usage(session, customer.id)
     tickets = _customer_tickets(session, customer.id)
     approval = _latest_approval(session, customer.id)
     open_tickets = sum(1 for ticket in tickets if ticket.status != "Closed")
-    escalated = sum(1 for ticket in tickets if ticket.severity in {"P1", "P2"} and ticket.status != "Closed")
+    escalated = _open_escalation_count(tickets)
 
-    recommended_action = approval.action_title if approval else "Generate a bounded retention package."
+    if approval:
+        recommended_action = approval.action_title
+    elif customer.risk_level in {"Critical", "High"}:
+        recommended_action = "Create an approval-ready retention recommendation."
+    else:
+        recommended_action = "Monitor account health and refresh evidence."
 
     return CustomerRiskSummary(
         id=customer.id,
@@ -304,7 +283,7 @@ def _to_customer_summary(session: Session, customer: Customer) -> CustomerRiskSu
         ticketLoad=f"{open_tickets} open, {escalated} escalated",
         lastActivity=f"Usage changed {usage.usage_change_pct:.0f}% in {usage.period_label}",
         topDrivers=[
-            f"Premium adoption at {usage.premium_feature_adoption_pct:.0f}%",
+            f"Usage change {usage.usage_change_pct:.0f}% with {usage.premium_feature_adoption_pct:.0f}% premium adoption",
             f"{escalated} escalated tickets remain active",
             f"Renewal window: {customer.renewal_date}",
         ],
@@ -336,14 +315,14 @@ def get_dashboard_insights(session: Session) -> DashboardInsights:
     ) or 0
     critical_accounts = [summary for summary in summaries if summary.riskLevel in {"Critical", "High"}]
 
-    highlights = []
+    highlights: list[str] = []
     if critical_accounts:
         top_account = sorted(critical_accounts, key=lambda summary: summary.churnProbability, reverse=True)[0]
         highlights.append(
-            f"{top_account.name} shows the strongest churn pressure across usage decline, support load, and renewal timing."
+            f"{top_account.name} has the strongest churn pressure, with evidence ready for leadership review."
         )
-    highlights.append(f"{open_approvals} approval-ready interventions are waiting for operating review.")
-    highlights.append("The bounded pipeline keeps evidence, critique, and final judgment visible before execution.")
+    highlights.append(f"{open_approvals} retention actions are waiting for operating review.")
+    highlights.append("Evidence, critique, and final judgment stay visible before execution.")
 
     return DashboardInsights(
         portfolioAtRisk=len(critical_accounts),
@@ -356,7 +335,9 @@ def get_dashboard_insights(session: Session) -> DashboardInsights:
 
 
 def list_customers(session: Session) -> list[CustomerRiskSummary]:
-    customers = list(session.scalars(select(Customer).order_by(desc(Customer.churn_probability), desc(Customer.monthly_revenue))))
+    customers = list(
+        session.scalars(select(Customer).order_by(desc(Customer.churn_probability), desc(Customer.monthly_revenue)))
+    )
     return [_to_customer_summary(session, customer) for customer in customers]
 
 
@@ -411,14 +392,14 @@ def get_customer_detail(session: Session, customer_id: str) -> CustomerDetail | 
     return CustomerDetail(
         **summary.model_dump(),
         evidence=[
-            {
-                "id": row.id,
-                "sourceType": row.source_type,
-                "sourceId": row.source_id,
-                "title": row.title,
-                "snippet": row.snippet,
-                "relevance": row.relevance,
-            }
+            EvidenceItem(
+                id=row.id,
+                sourceType=row.source_type,
+                sourceId=row.source_id,
+                title=row.title,
+                snippet=row.snippet,
+                relevance=row.relevance,
+            )
             for row in evidence_rows
         ],
         recentRuns=[
@@ -474,23 +455,6 @@ def get_latest_workflow(session: Session, customer_id: str | None = None) -> Wor
     return _workflow_response_from_run(session, workflow_run, customer, approval)
 
 
-def _target_customer(session: Session, request: WorkflowRequest) -> Customer:
-    if request.focusCustomerId:
-        customer = session.get(Customer, request.focusCustomerId)
-        if customer:
-            return customer
-
-    prompt_lower = request.prompt.lower()
-    for customer in session.scalars(select(Customer)):
-        if customer.name.lower() in prompt_lower:
-            return customer
-
-    customer = session.scalars(select(Customer).order_by(desc(Customer.churn_probability))).first()
-    if customer is None:
-        raise ValueError("No customers are available in the database")
-    return customer
-
-
 def _approval_from_db(approval: Approval, customer: Customer) -> ApprovalRequest:
     return ApprovalRequest(
         id=approval.id,
@@ -540,24 +504,26 @@ def _workflow_response_from_run(
             .order_by(desc(AuditRecord.created_at))
         )
     )
+    detected_intent = classify_intent_fallback(workflow_run.prompt).intent
 
     return WorkflowResponse(
         requestId=workflow_run.id,
         submittedAt=isoformat(workflow_run.submitted_at),
         workflowType=workflow_run.workflow_type,
+        detectedIntent=detected_intent,
         requestSummary=workflow_run.request_summary,
         status=workflow_run.status,
         targetEntity=TargetEntity(id=customer.id, name=customer.name, segment=customer.segment),
         summary=workflow_run.summary,
         evidence=[
-            {
-                "id": row.id,
-                "sourceType": row.source_type,
-                "sourceId": row.source_id,
-                "title": row.title,
-                "snippet": row.snippet,
-                "relevance": row.relevance,
-            }
+            EvidenceItem(
+                id=row.id,
+                sourceType=row.source_type,
+                sourceId=row.source_id,
+                title=row.title,
+                snippet=row.snippet,
+                relevance=row.relevance,
+            )
             for row in evidence_rows
         ],
         plannerOutput=PlannerOutput(
@@ -593,21 +559,288 @@ def _workflow_response_from_run(
     )
 
 
-def run_bounded_workflow(session: Session, request: WorkflowRequest) -> WorkflowResponse:
-    customer = _target_customer(session, request)
-    usage = _latest_usage(session, customer.id)
-    tickets = _customer_tickets(session, customer.id)
+def _context_payload(
+    customer: Customer,
+    usage: UsageMetric,
+    tickets: list[SupportTicket],
+    approvals: list[Approval],
+    runs: list[WorkflowRun],
+) -> dict:
+    return {
+        "customer": {
+            "id": customer.id,
+            "name": customer.name,
+            "segment": customer.segment,
+            "plan": customer.plan,
+            "monthlyRevenue": customer.monthly_revenue,
+            "riskLevel": customer.risk_level,
+            "churnProbability": customer.churn_probability,
+            "healthScore": customer.health_score,
+            "renewalDate": customer.renewal_date,
+            "accountOwner": customer.account_owner,
+        },
+        "usage": {
+            "periodLabel": usage.period_label,
+            "weeklyActiveUsers": usage.weekly_active_users,
+            "usageChangePct": usage.usage_change_pct,
+            "premiumFeatureAdoptionPct": usage.premium_feature_adoption_pct,
+            "loginVolume": usage.login_volume,
+        },
+        "supportTickets": [
+            {
+                "id": ticket.id,
+                "title": ticket.title,
+                "severity": ticket.severity,
+                "status": ticket.status,
+                "snippet": ticket.snippet,
+                "createdAt": isoformat(ticket.created_at),
+            }
+            for ticket in tickets
+        ],
+        "recentApprovals": [
+            {
+                "id": approval.id,
+                "status": approval.status,
+                "actionTitle": approval.action_title,
+                "owner": approval.owner,
+                "priority": approval.priority,
+                "rationale": approval.rationale,
+                "estimatedImpact": approval.estimated_impact,
+            }
+            for approval in approvals[:3]
+        ],
+        "recentRuns": [
+            {
+                "id": run.id,
+                "prompt": run.prompt,
+                "summary": run.summary,
+                "status": run.status,
+                "submittedAt": isoformat(run.submitted_at),
+            }
+            for run in runs[:3]
+        ],
+    }
 
-    analyst = analyst_stage(customer, usage, tickets)
-    evidence = researcher_stage(customer, usage, tickets)
-    planner = planner_stage(customer, analyst)
-    planner = _maybe_llm_planner(request, customer, analyst, evidence, planner)
-    risk_review = risk_stage(customer, analyst, planner)
-    risk_review = _maybe_llm_risk(customer, planner, risk_review)
-    arbiter = arbiter_stage(customer, planner, risk_review)
-    summary = comms_summary(customer, analyst, arbiter)
-    summary = _maybe_llm_summary(customer, summary, arbiter)
 
+def _deterministic_draft(
+    request: WorkflowRequest,
+    customer: Customer,
+    usage: UsageMetric,
+    tickets: list[SupportTicket],
+    intent: IntentType,
+) -> WorkflowDraft:
+    analysis = analyst_stage(customer, usage, tickets, intent)
+    evidence = researcher_stage(customer, usage, tickets, intent)
+    planner = planner_stage(customer, analysis, intent)
+    risk_review = risk_stage(customer, analysis, planner, intent)
+    arbiter = arbiter_stage(customer, planner, risk_review, intent)
+    summary = comms_summary(customer, analysis, arbiter, intent)
+    selected_strategy = next(
+        (strategy for strategy in planner.strategies if strategy.id == arbiter.selectedStrategyId),
+        planner.strategies[0],
+    )
+    approval = LLMApprovalOutput(
+        actionTitle=f"Approve {selected_strategy.title.lower()}",
+        owner=selected_strategy.owner,
+        priority="Urgent" if customer.risk_level == "Critical" else "High",
+        rationale=arbiter.rationale,
+        estimatedImpact=analysis.revenue_at_risk,
+        dueLabel=selected_strategy.deliveryWindow,
+    )
+    return WorkflowDraft(
+        summary=summary,
+        evidence=evidence,
+        planner=planner,
+        risk_review=risk_review,
+        arbiter=arbiter,
+        approval=approval,
+        analysis_summary=analysis.summary,
+        source="deterministic",
+    )
+
+
+def _llm_prompt(
+    request: WorkflowRequest,
+    customer: Customer,
+    intent: IntentType,
+    context: dict,
+    fallback: WorkflowDraft,
+) -> str:
+    return f"""
+You are StratIQ, an executive decision-support workflow for customer churn and retention.
+
+Use the provided customer data only. Do not invent facts, systems, dates, tickets, or metrics.
+The answer must change based on the user's question intent and the selected customer.
+Use concise executive language. Return valid JSON only.
+
+Detected intent: {intent} ({intent_label(intent)})
+User question: {request.prompt}
+
+Customer context JSON:
+{json.dumps(context, indent=2)}
+
+Fallback draft for shape reference only:
+summary: {fallback.summary}
+planner strategy ids: {[strategy.id for strategy in fallback.planner.strategies]}
+available evidence source ids: {[ticket["id"] for ticket in context["supportTickets"]]} plus usage metric id {context["usage"]["periodLabel"]}
+
+Return JSON with this exact shape:
+{{
+  "intent": "{intent}",
+  "analyst": {{
+    "summary": "customer-specific diagnosis",
+    "topDrivers": ["driver 1", "driver 2", "driver 3"],
+    "kpis": ["KPI phrase"]
+  }},
+  "researcher": {{
+    "summary": "how the evidence supports the recommendation",
+    "evidence": [
+      {{
+        "sourceType": "usage_metric|support_ticket|renewal_signal|account_note",
+        "sourceId": "must match a provided ticket id, usage metric label, or customer id",
+        "title": "short evidence title",
+        "snippet": "evidence grounded in provided data",
+        "relevance": "why this matters for the user's question"
+      }}
+    ]
+  }},
+  "planner": {{
+    "summary": "strategy summary tuned to the intent",
+    "strategies": [
+      {{
+        "id": "strategy-1",
+        "title": "short strategy name",
+        "description": "what leadership should do",
+        "owner": "business owner",
+        "expectedImpact": "measurable account impact",
+        "deliveryWindow": "timing"
+      }}
+    ]
+  }},
+  "riskReview": {{
+    "verdict": "pass|caution|block",
+    "critique": "what could make the strategy fail",
+    "concerns": ["specific concern"],
+    "requiredChecks": ["specific check before approval"]
+  }},
+  "arbiter": {{
+    "selectedStrategyId": "one planner strategy id",
+    "finalRecommendation": "final recommendation",
+    "rationale": "why this is the best first move",
+    "confidenceLabel": "High confidence|Moderate confidence|Caution"
+  }},
+  "summary": "2 sentence executive summary",
+  "approval": {{
+    "actionTitle": "approval card title",
+    "owner": "named business owner",
+    "priority": "Normal|High|Urgent",
+    "rationale": "approval rationale",
+    "estimatedImpact": "business impact",
+    "dueLabel": "review timing"
+  }}
+}}
+""".strip()
+
+
+def _coerce_evidence(
+    output: LLMWorkflowOutput,
+    fallback: WorkflowDraft,
+    usage: UsageMetric,
+    tickets: list[SupportTicket],
+    customer: Customer,
+) -> list[EvidenceItem]:
+    allowed_ticket_ids = {ticket.id for ticket in tickets}
+    allowed_source_ids = allowed_ticket_ids | {usage.period_label, customer.id}
+    evidence: list[EvidenceItem] = []
+
+    for index, item in enumerate(output.researcher.evidence[:4], start=1):
+        source_id = item.sourceId if item.sourceId in allowed_source_ids else usage.period_label
+        source_type = item.sourceType
+        if source_type not in {"usage_metric", "support_ticket", "renewal_signal", "account_note"}:
+            source_type = "support_ticket" if source_id in allowed_ticket_ids else "usage_metric"
+        evidence.append(
+            EvidenceItem(
+                id=f"llm-evidence-{index}",
+                sourceType=source_type,
+                sourceId=source_id,
+                title=item.title.strip()[:180] or fallback.evidence[0].title,
+                snippet=item.snippet.strip() or fallback.evidence[0].snippet,
+                relevance=item.relevance.strip() or fallback.evidence[0].relevance,
+            )
+        )
+
+    return evidence or fallback.evidence
+
+
+def _coerce_priority(priority: str, customer: Customer) -> str:
+    normalized = priority.strip().title()
+    if normalized in {"Normal", "High", "Urgent"}:
+        return normalized
+    return "Urgent" if customer.risk_level == "Critical" else "High"
+
+
+def _validate_llm_draft(
+    payload: dict,
+    fallback: WorkflowDraft,
+    customer: Customer,
+    usage: UsageMetric,
+    tickets: list[SupportTicket],
+) -> WorkflowDraft:
+    output = LLMWorkflowOutput.model_validate(payload)
+    if not output.planner.strategies:
+        raise ValueError("LLM output did not include any strategy options.")
+
+    strategy_ids = {strategy.id for strategy in output.planner.strategies}
+    if output.arbiter.selectedStrategyId not in strategy_ids:
+        output.arbiter.selectedStrategyId = output.planner.strategies[0].id
+
+    evidence = _coerce_evidence(output, fallback, usage, tickets, customer)
+    approval = output.approval
+    approval.priority = _coerce_priority(approval.priority, customer)
+
+    return WorkflowDraft(
+        summary=output.summary.strip() or fallback.summary,
+        evidence=evidence,
+        planner=output.planner,
+        risk_review=output.riskReview,
+        arbiter=output.arbiter,
+        approval=approval,
+        analysis_summary=output.analyst.summary or fallback.analysis_summary,
+        source="llm",
+    )
+
+
+def _run_llm_reasoning(
+    request: WorkflowRequest,
+    customer: Customer,
+    intent: IntentType,
+    context: dict,
+    usage: UsageMetric,
+    tickets: list[SupportTicket],
+    fallback: WorkflowDraft,
+) -> WorkflowDraft:
+    if not llm_is_enabled():
+        print("StratIQ LLM disabled or missing provider key; using deterministic reasoning fallback.")
+        return fallback
+
+    try:
+        payload = generate_json(
+            _llm_prompt(request, customer, intent, context, fallback),
+            max_tokens=settings.llm_max_tokens,
+        )
+        return _validate_llm_draft(payload, fallback, customer, usage, tickets)
+    except (LLMRequestError, ValidationError, ValueError) as exc:
+        print(f"StratIQ LLM reasoning fallback activated: {exc}")
+        return fallback
+
+
+def _persist_workflow(
+    session: Session,
+    request: WorkflowRequest,
+    customer: Customer,
+    intent: IntentType,
+    draft: WorkflowDraft,
+) -> WorkflowResponse:
     run_id = f"run-{uuid4().hex[:10]}"
     submitted_at = datetime.now(timezone.utc)
     workflow_run = WorkflowRun(
@@ -616,16 +849,16 @@ def run_bounded_workflow(session: Session, request: WorkflowRequest) -> Workflow
         prompt=request.prompt,
         workflow_type=request.workflowType,
         request_summary=request.prompt,
-        summary=summary,
+        summary=draft.summary,
         status="completed",
         submitted_at=submitted_at,
     )
     session.add(workflow_run)
 
-    for item in evidence:
+    for index, item in enumerate(draft.evidence, start=1):
         session.add(
             RunEvidence(
-                id=f"{run_id}-{item.id}",
+                id=f"{run_id}-ev-{index}",
                 run_id=run_id,
                 source_type=item.sourceType,
                 source_id=item.sourceId,
@@ -639,33 +872,30 @@ def run_bounded_workflow(session: Session, request: WorkflowRequest) -> Workflow
         RunDecision(
             id=f"decision-{uuid4().hex[:10]}",
             run_id=run_id,
-            planner_summary=planner.summary,
-            planner_options=[strategy.model_dump() for strategy in planner.strategies],
-            risk_verdict=risk_review.verdict,
-            risk_critique=risk_review.critique,
-            risk_concerns=risk_review.concerns,
-            risk_required_checks=risk_review.requiredChecks,
-            arbiter_strategy_id=arbiter.selectedStrategyId,
-            arbiter_final_recommendation=arbiter.finalRecommendation,
-            arbiter_rationale=arbiter.rationale,
-            arbiter_confidence_label=arbiter.confidenceLabel,
+            planner_summary=draft.planner.summary,
+            planner_options=[strategy.model_dump() for strategy in draft.planner.strategies],
+            risk_verdict=draft.risk_review.verdict,
+            risk_critique=draft.risk_review.critique,
+            risk_concerns=draft.risk_review.concerns,
+            risk_required_checks=draft.risk_review.requiredChecks,
+            arbiter_strategy_id=draft.arbiter.selectedStrategyId,
+            arbiter_final_recommendation=draft.arbiter.finalRecommendation,
+            arbiter_rationale=draft.arbiter.rationale,
+            arbiter_confidence_label=draft.arbiter.confidenceLabel,
         )
     )
 
-    selected_strategy = next(
-        strategy for strategy in planner.strategies if strategy.id == arbiter.selectedStrategyId
-    )
     approval = Approval(
         id=f"approval-{uuid4().hex[:10]}",
         run_id=run_id,
         customer_id=customer.id,
-        action_title=f"Approve {selected_strategy.title.lower()}",
-        owner=selected_strategy.owner,
-        priority="Urgent" if customer.risk_level == "Critical" else "High",
+        action_title=draft.approval.actionTitle,
+        owner=draft.approval.owner,
+        priority=draft.approval.priority,
         status="Pending",
-        rationale=arbiter.rationale,
-        estimated_impact=analyst.revenue_at_risk,
-        due_label=selected_strategy.deliveryWindow,
+        rationale=draft.approval.rationale,
+        estimated_impact=draft.approval.estimatedImpact,
+        due_label=draft.approval.dueLabel,
     )
     session.add(approval)
     session.add(
@@ -674,15 +904,14 @@ def run_bounded_workflow(session: Session, request: WorkflowRequest) -> Workflow
             run_id=run_id,
             approval_id=approval.id,
             event_type="workflow_run",
-            actor="Comms Agent",
-            message=f"Workflow package created for {customer.name} with approval-ready recommendation.",
+            actor="StratIQ",
+            message=f"{customer.name} recommendation created for {intent_label(intent).lower()} review.",
         )
     )
 
     session.commit()
     session.refresh(approval)
 
-    action_history = _actions_for_approval(session, approval)
     audit = [
         AuditRecordSchema(
             id=record.id,
@@ -702,18 +931,40 @@ def run_bounded_workflow(session: Session, request: WorkflowRequest) -> Workflow
         requestId=run_id,
         submittedAt=isoformat(submitted_at),
         workflowType=request.workflowType,
+        detectedIntent=intent,
         requestSummary=request.prompt,
         status="completed",
         targetEntity=TargetEntity(id=customer.id, name=customer.name, segment=customer.segment),
-        summary=summary,
-        evidence=evidence,
-        plannerOutput=planner,
-        riskReview=risk_review,
-        arbiterDecision=arbiter,
+        summary=draft.summary,
+        evidence=draft.evidence,
+        plannerOutput=draft.planner,
+        riskReview=draft.risk_review,
+        arbiterDecision=draft.arbiter,
         approval=_approval_from_db(approval, customer),
-        actionHistory=action_history,
+        actionHistory=_actions_for_approval(session, approval),
         auditRecords=audit,
     )
+
+
+def run_bounded_workflow(session: Session, request: WorkflowRequest) -> WorkflowResponse:
+    intent_result = classify_intent(request.prompt)
+    intent = intent_result.intent
+    customer = _target_customer(session, request, intent)
+    usage = _latest_usage(session, customer.id)
+    tickets = _customer_tickets(session, customer.id)
+    recent_approvals = list(
+        session.scalars(
+            select(Approval)
+            .where(Approval.customer_id == customer.id)
+            .order_by(desc(Approval.created_at))
+            .limit(5)
+        )
+    )
+    recent_runs = _recent_runs(session, customer.id)
+    context = _context_payload(customer, usage, tickets, recent_approvals, recent_runs)
+    fallback = _deterministic_draft(request, customer, usage, tickets, intent)
+    draft = _run_llm_reasoning(request, customer, intent, context, usage, tickets, fallback)
+    return _persist_workflow(session, request, customer, intent, draft)
 
 
 def record_feedback(session: Session, payload: FeedbackPayload) -> RecordFeedbackResponse:
@@ -768,7 +1019,7 @@ def apply_action(session: Session, payload: ApprovalActionPayload) -> ActionResu
         approval_id=approval.id,
         status=action_status,
         summary=summary,
-        audit_note="Bounded workflow recorded the action state transition for audit visibility.",
+        audit_note="Decision state transition recorded for audit visibility.",
     )
     session.add(action)
     session.add(
