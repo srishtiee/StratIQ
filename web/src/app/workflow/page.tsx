@@ -5,6 +5,7 @@ import { useSearchParams } from "next/navigation";
 import type {
   ActionResult,
   ApprovalStatus,
+  IntentType,
   WorkflowResponse,
 } from "@shared/contracts";
 import { ActionCard } from "@/components/action-card";
@@ -14,11 +15,24 @@ import { StatePanel } from "@/components/state-panel";
 import { executeAction, getLatestWorkflow, submitAsk, submitFeedback } from "@/lib/service";
 
 const defaultPrompt =
-  "Assess Northstar Fiber's churn risk and prepare a governed retention action that can be reviewed by leadership this week and adopted within an existing enterprise renewal workflow.";
+  "Why did churn risk increase for Northstar Fiber, and which retention action should leadership approve first?";
+
+const intentLabels: Record<IntentType, string> = {
+  churn_root_cause: "Root cause",
+  retention_action: "Retention action",
+  evidence_review: "Evidence review",
+  approval_priority: "Approval priority",
+  commercial_risk: "Commercial risk",
+  support_risk: "Support risk",
+  usage_decline: "Usage decline",
+  adoption_risk: "Adoption risk",
+  renewal_risk: "Renewal risk",
+  general_churn: "Churn review",
+};
 
 export default function WorkflowPage() {
   const searchParams = useSearchParams();
-  const customerId = searchParams.get("customer") ?? "c-102";
+  const customerId = searchParams.get("customer");
   const [prompt, setPrompt] = useState(defaultPrompt);
   const [workflow, setWorkflow] = useState<WorkflowResponse | null>(null);
   const [result, setResult] = useState<ActionResult | null>(null);
@@ -34,7 +48,7 @@ export default function WorkflowPage() {
     let active = true;
 
     startTransition(async () => {
-      const latestWorkflow = await getLatestWorkflow(customerId);
+      const latestWorkflow = await getLatestWorkflow(customerId ?? undefined);
       if (!active) {
         return;
       }
@@ -107,7 +121,7 @@ export default function WorkflowPage() {
     startTransition(async () => {
       const response = await submitAsk({
         prompt,
-        focusCustomerId: customerId,
+        focusCustomerId: customerId ?? undefined,
       });
       setWorkflow(response);
       setResult(null);
@@ -158,7 +172,7 @@ export default function WorkflowPage() {
       <section className="hero-card workflow-hero">
         <div>
           <span className="eyebrow">Operational workflow</span>
-          <h2 className="hero-title workflow-hero__title">Bounded churn decision workspace</h2>
+          <h2 className="hero-title workflow-hero__title">Retention decision workspace</h2>
           <p className="hero-copy">
             Review the ask, pressure-test the recommendation, and approve the next action without leaving the executive workflow.
           </p>
@@ -170,8 +184,8 @@ export default function WorkflowPage() {
             <strong>{workflow?.targetEntity.name ?? "Northstar Fiber"}</strong>
           </article>
           <article className="meta-stat">
-            <span>Workflow state</span>
-            <strong>{workflow?.status ?? "Ready"}</strong>
+            <span>Request focus</span>
+            <strong>{workflow ? intentLabels[workflow.detectedIntent] : "Ready"}</strong>
           </article>
           <article className="meta-stat">
             <span>Primary action</span>
@@ -246,14 +260,14 @@ export default function WorkflowPage() {
                   </button>
                 </div>
                 <p className="muted-copy workflow-prompt-note">
-                  Contracts mirror `POST /api/ask` so the UI can later swap from mock orchestration to an enterprise service without a layout rewrite.
+                  This request drives the account evidence, recommendation, and approval details shown here.
                 </p>
               </>
             )}
             {isPending ? (
               <StatePanel
-                title="Generating workflow package"
-                message="StratIQ is collecting evidence, drafting the recommendation set, and preparing the approval package."
+                title="Preparing recommendation"
+                message="StratIQ is reviewing customer signals, prioritizing evidence, and preparing the approval package."
                 tone="loading"
               />
             ) : null}
@@ -318,17 +332,17 @@ export default function WorkflowPage() {
                     <article className="agent-item">
                       <div className="lane-card__title" style={{ marginBottom: "0.5rem" }}>
                         <h3 style={{ fontSize: "1rem" }}>Evidence review</h3>
-                        <span className="eyebrow">Analyst + Researcher</span>
+                        <span className="eyebrow">{intentLabels[workflow.detectedIntent]}</span>
                       </div>
                       <p>{workflow.summary}</p>
                       <p className="muted-copy" style={{ marginTop: "0.45rem" }}>
-                        {workflow.targetEntity.name} is the current target entity for this bounded churn workflow.
+                        {workflow.targetEntity.name} is the account selected for this retention review.
                       </p>
                     </article>
 
                     <article className="agent-item">
                       <div className="lane-card__title" style={{ marginBottom: "0.5rem" }}>
-                        <h3 style={{ fontSize: "1rem" }}>{workflow.arbiterDecision.agent}</h3>
+                        <h3 style={{ fontSize: "1rem" }}>Final recommendation</h3>
                         <span className="eyebrow">{workflow.arbiterDecision.confidenceLabel}</span>
                       </div>
                       <p>{workflow.arbiterDecision.finalRecommendation}</p>
@@ -342,7 +356,7 @@ export default function WorkflowPage() {
                 {activePanel === "strategy" ? (
                   <article className="agent-item">
                     <div className="lane-card__title" style={{ marginBottom: "0.5rem" }}>
-                      <h3 style={{ fontSize: "1rem" }}>{workflow.plannerOutput.agent}</h3>
+                      <h3 style={{ fontSize: "1rem" }}>Recommended strategies</h3>
                       <span className="eyebrow">{workflow.plannerOutput.strategies.length} strategy paths</span>
                     </div>
                     <p>{workflow.plannerOutput.summary}</p>
@@ -366,7 +380,7 @@ export default function WorkflowPage() {
                 {activePanel === "risk" ? (
                   <article className="agent-item">
                     <div className="lane-card__title" style={{ marginBottom: "0.5rem" }}>
-                      <h3 style={{ fontSize: "1rem" }}>{workflow.riskReview.agent}</h3>
+                      <h3 style={{ fontSize: "1rem" }}>Risk review</h3>
                       <span className="eyebrow">{workflow.riskReview.verdict}</span>
                     </div>
                     <p>{workflow.riskReview.critique}</p>
@@ -392,7 +406,7 @@ export default function WorkflowPage() {
                     <div className="section-header">
                       <div>
                         <h3>Audit trail</h3>
-                        <p>Each bounded workflow step is logged so the decision package can be reviewed later.</p>
+                        <p>Each decision and action update is recorded so the package can be reviewed later.</p>
                       </div>
                     </div>
                     <div className="audit-list">
@@ -437,7 +451,7 @@ export default function WorkflowPage() {
           ) : (
             <StatePanel
               title="Decision workspace is empty"
-              message="Submit an ask to populate the evidence, strategy, critique, arbiter judgment, and approval package."
+              message="Submit an ask to populate the evidence, strategy, critique, final recommendation, and approval package."
             />
           )}
         </LaneSection>
@@ -472,7 +486,7 @@ export default function WorkflowPage() {
                 <div className="workflow-compact-note">
                   <strong>Execution boundary</strong>
                   <p>
-                    Phase 1 logs the governed decision and action handoff. CRM, pricing, and ticketing automation stay out of band for this base demo.
+                    StratIQ records the approved decision and handoff while downstream CRM, pricing, or ticketing steps remain under operator control.
                   </p>
                 </div>
               </div>

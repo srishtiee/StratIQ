@@ -1,20 +1,20 @@
 # StratIQ
 
-StratIQ is a dashboard-first executive decision-support platform for CXO workflows. This repository now implements a bounded customer-churn vertical slice from query to recommendation to approval logging, while keeping the architecture extensible for employee attrition later.
+StratIQ is a dashboard-first executive decision-support platform for CXO workflows. This repository implements a customer-churn vertical slice from query to recommendation to approval logging, while keeping the architecture extensible for employee attrition later.
 
 ## What This Build Includes
 
 - Next.js executive dashboard and workflow UI
-- FastAPI backend with a bounded reasoning pipeline
+- FastAPI backend with intent-aware reasoning and approval persistence
 - Postgres-ready persistence designed for Supabase or local Postgres
-- Seeded churn demo accounts such as Northstar Fiber and Aster Retail Group
+- 14 seeded churn demo accounts across distinct risk archetypes
 - Approval queue and action logging
 - Audit history and customer drill-down pages
 - Shared typed contracts across frontend and backend
 
-## Bounded Reasoning Flow
+## Reasoning Flow
 
-This repo does not implement an open-ended debate loop. The active workflow is:
+This repo does not implement an open-ended debate loop. The active workflow is a predictable critique-and-decision sequence:
 
 1. Analyst Agent reviews structured churn signals
 2. Researcher Agent retrieves support and renewal evidence
@@ -29,12 +29,12 @@ The UI keeps the lane mental model:
 - `Plan / Debate`
 - `Approve / Execute`
 
-The center lane now shows structured evidence, strategy, critique, and judgment rather than a looping transcript.
+The center lane shows structured evidence, strategy, critique, and judgment rather than a looping transcript.
 
 ## Repo Layout
 
 - `web/`: Next.js app router frontend
-- `api/`: FastAPI backend and bounded orchestration logic
+- `api/`: FastAPI backend, intent classification, LLM provider abstraction, and fallback reasoning
 - `shared/`: shared TypeScript contracts
 - `db/`: Postgres schema and seed SQL for local bootstrap
 
@@ -69,8 +69,14 @@ Important variables:
 - `NEXT_PUBLIC_STRATIQ_API_URL=http://localhost:8000`
 - `DATABASE_URL=postgresql+psycopg://stratiq:stratiq@localhost:5432/stratiq`
 - `STRATIQ_AUTO_INIT_DB=true`
+- `STRATIQ_LLM_ENABLED=true`
+- `STRATIQ_LLM_PROVIDER=openai`
+- `OPENAI_API_KEY=your-key`
+- `STRATIQ_OPENAI_MODEL=gpt-4o`
 
 For Supabase, replace `DATABASE_URL` with the project Postgres connection string. The backend uses Postgres directly, so Supabase works as the hosted database layer.
+
+If `OPENAI_API_KEY` is missing or the model returns invalid JSON, the API logs the fallback path and still returns a complete deterministic recommendation.
 
 ### 3. Start Postgres
 
@@ -141,6 +147,18 @@ The current build supports this walkthrough:
 8. Open `/audit` to inspect persisted workflow and action history
 9. Open `/customers/:id` to review account-level evidence and prior runs
 
+## Manual Acceptance Prompts
+
+Use these with `POST /api/ask` or the `/workflow` page:
+
+- `Why is Northstar Fiber at risk?`
+- `What should we approve first for Northstar Fiber?`
+- `Is Aster Retail Group mainly a pricing risk or adoption risk?`
+- `What evidence supports the recommendation for Orion Capital Services?`
+- `Can we avoid discounting for BlueHarbor Logistics?`
+
+Expected result: the selected customer, evidence, strategy, critique, final recommendation, approval card, and audit record should differ by prompt and account.
+
 ## Developer Scripts
 
 - `npm run dev:web`
@@ -152,6 +170,6 @@ The current build supports this walkthrough:
 
 ## Implementation Notes
 
-- The backend currently uses deterministic logic and seeded evidence for demo reliability.
-- The reasoning pipeline is intentionally provider-agnostic so OpenAI or Anthropic model calls can replace stage logic later.
+- The backend uses LLM-first structured reasoning when configured, with deterministic fallback for demo reliability.
+- The provider abstraction supports OpenAI and Anthropic without exposing keys to the frontend.
 - Mock data is still present in the frontend as a graceful fallback if the API is unavailable during development.

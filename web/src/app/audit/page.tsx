@@ -12,7 +12,7 @@ export default async function AuditPage() {
           <span className="eyebrow">Decision history</span>
           <h2 className="hero-title">Track workflow runs, approvals, and actions with a clean audit surface.</h2>
           <p className="hero-copy">
-            StratIQ records the bounded reasoning flow as an enterprise-friendly trail so operators can explain what happened, who approved it, and what action state followed.
+            StratIQ records decisions, approvals, and action states as an enterprise-friendly trail so operators can explain what happened and who approved it.
           </p>
         </div>
         <div className="hero-meta">
@@ -39,7 +39,7 @@ export default async function AuditPage() {
         <div className="section-header">
           <div>
             <h3>Latest audit records</h3>
-            <p>Bounded reasoning, approvals, and action state changes are persisted here for review.</p>
+            <p>Decision, approval, and action state changes are persisted here for review.</p>
           </div>
         </div>
         {records.length > 0 ? (

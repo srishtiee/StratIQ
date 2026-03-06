@@ -115,7 +115,7 @@ export default async function CustomerDetailPage({
           ) : (
             <StatePanel
               title="No evidence captured yet"
-              message="Run the bounded workflow for this account to store support snippets and structured signals."
+              message="Run a retention review for this account to store support snippets and structured signals."
             />
           )}
         </section>
@@ -152,7 +152,7 @@ export default async function CustomerDetailPage({
         <div className="section-header">
           <div>
             <h3>Recent workflow runs</h3>
-            <p>Previous bounded decision packages recorded for this account.</p>
+            <p>Previous decision packages recorded for this account.</p>
           </div>
         </div>
         {customer.recentRuns.length > 0 ? (
@@ -173,7 +173,7 @@ export default async function CustomerDetailPage({
         ) : (
           <StatePanel
             title="No workflow history yet"
-            message="This account has not yet been processed through the bounded churn pipeline."
+            message="This account has not yet been processed through a retention review."
           />
         )}
       </section>

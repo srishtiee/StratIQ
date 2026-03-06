@@ -22,6 +22,7 @@ import {
 
 const pause = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 const requestTimeoutMs = 1800;
+let hasWarnedAboutFallback = false;
 
 export function getApiBaseUrl() {
   return process.env.NEXT_PUBLIC_STRATIQ_API_URL ?? "http://localhost:8000";
@@ -43,15 +44,32 @@ async function fetchFromApi<T>(path: string, init?: RequestInit): Promise<T | nu
     });
 
     if (!response.ok) {
+      warnAboutFallback(path, `HTTP ${response.status}`);
       return null;
     }
 
     return (await response.json()) as T;
-  } catch {
+  } catch (error) {
+    warnAboutFallback(path, error instanceof Error ? error.message : "request failed");
     return null;
   } finally {
     clearTimeout(timeoutId);
   }
+}
+
+function warnAboutFallback(path: string, reason: string) {
+  if (reason.includes("Dynamic server usage")) {
+    return;
+  }
+
+  if (hasWarnedAboutFallback) {
+    return;
+  }
+
+  hasWarnedAboutFallback = true;
+  console.warn(
+    `StratIQ API unavailable for ${path}; using local development fallback data. Reason: ${reason}`,
+  );
 }
 
 export async function getDashboardInsights(): Promise<DashboardInsights> {
