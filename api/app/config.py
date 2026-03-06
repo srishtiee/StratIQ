@@ -1,5 +1,15 @@
 from dataclasses import dataclass
 import os
+from pathlib import Path
+
+try:
+    from dotenv import load_dotenv
+except ImportError:  # pragma: no cover - local convenience only
+    load_dotenv = None
+
+ROOT_DIR = Path(__file__).resolve().parents[2]
+if load_dotenv:
+    load_dotenv(ROOT_DIR / ".env.local")
 
 
 def _to_bool(value: str | None, default: bool = False) -> bool:

@@ -17,7 +17,6 @@ import {
   customerDetails,
   customers,
   dashboardInsights,
-  workflowTemplate,
 } from "@/data/mock-data";
 
 const pause = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
@@ -129,11 +128,6 @@ export async function getLatestWorkflow(customerId?: string): Promise<WorkflowRe
     return apiWorkflow;
   }
 
-  await pause(120);
-  if (!customerId || workflowTemplate.targetEntity.id === customerId) {
-    return workflowTemplate;
-  }
-
   return undefined;
 }
 
@@ -146,13 +140,7 @@ export async function submitAsk(payload: WorkflowRequest): Promise<WorkflowRespo
     return apiWorkflow;
   }
 
-  await pause(180);
-  return {
-    ...workflowTemplate,
-    requestId: `run-${Date.now()}`,
-    submittedAt: new Date().toISOString(),
-    requestSummary: payload.prompt,
-  };
+  throw new Error("StratIQ API did not return a workflow response. Check that the FastAPI backend is running and connected to the database.");
 }
 
 export async function submitFeedback(payload: FeedbackPayload) {

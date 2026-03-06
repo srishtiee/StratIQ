@@ -5,6 +5,7 @@ import { useSearchParams } from "next/navigation";
 import type {
   ActionResult,
   ApprovalStatus,
+  CustomerDetail,
   IntentType,
   WorkflowResponse,
 } from "@shared/contracts";
@@ -12,10 +13,10 @@ import { ActionCard } from "@/components/action-card";
 import { EvidencePanel } from "@/components/evidence-panel";
 import { LaneSection } from "@/components/lane-section";
 import { StatePanel } from "@/components/state-panel";
-import { executeAction, getLatestWorkflow, submitAsk, submitFeedback } from "@/lib/service";
+import { executeAction, getCustomerById, getLatestWorkflow, submitAsk, submitFeedback } from "@/lib/service";
 
-const defaultPrompt =
-  "Why did churn risk increase for Northstar Fiber, and which retention action should leadership approve first?";
+const defaultPromptFor = (customerName = "Northstar Fiber") =>
+  `Why did churn risk increase for ${customerName}, and which retention action should leadership approve first?`;
 
 const intentLabels: Record<IntentType, string> = {
   churn_root_cause: "Root cause",
@@ -33,9 +34,11 @@ const intentLabels: Record<IntentType, string> = {
 export default function WorkflowPage() {
   const searchParams = useSearchParams();
   const customerId = searchParams.get("customer");
-  const [prompt, setPrompt] = useState(defaultPrompt);
+  const [selectedCustomer, setSelectedCustomer] = useState<CustomerDetail | null>(null);
+  const [prompt, setPrompt] = useState(defaultPromptFor());
   const [workflow, setWorkflow] = useState<WorkflowResponse | null>(null);
   const [result, setResult] = useState<ActionResult | null>(null);
+  const [workflowError, setWorkflowError] = useState<string | null>(null);
   const [feedbackNote, setFeedbackNote] = useState("");
   const [lastFeedback, setLastFeedback] = useState<string | null>(null);
   const [activePanel, setActivePanel] = useState<"overview" | "strategy" | "risk" | "evidence" | "audit">(
@@ -48,15 +51,22 @@ export default function WorkflowPage() {
     let active = true;
 
     startTransition(async () => {
-      const latestWorkflow = await getLatestWorkflow(customerId ?? undefined);
+      const [customer, latestWorkflow] = await Promise.all([
+        customerId ? getCustomerById(customerId) : Promise.resolve(undefined),
+        getLatestWorkflow(customerId ?? undefined),
+      ]);
       if (!active) {
         return;
       }
 
+      const targetName = customer?.name ?? latestWorkflow?.targetEntity.name ?? "Northstar Fiber";
+      setSelectedCustomer(customer ?? null);
+      setWorkflowError(null);
+
       if (!latestWorkflow) {
         setWorkflow(null);
         setResult(null);
-        setPrompt(defaultPrompt);
+        setPrompt(defaultPromptFor(targetName));
         setLastFeedback(null);
         setIsPromptExpanded(true);
         return;
@@ -119,15 +129,21 @@ export default function WorkflowPage() {
 
   const handleSubmit = () => {
     startTransition(async () => {
-      const response = await submitAsk({
-        prompt,
-        focusCustomerId: customerId ?? undefined,
-      });
-      setWorkflow(response);
-      setResult(null);
-      setLastFeedback(null);
-      setActivePanel("overview");
-      setIsPromptExpanded(false);
+      try {
+        setWorkflowError(null);
+        const response = await submitAsk({
+          prompt,
+          focusCustomerId: customerId ?? undefined,
+        });
+        setWorkflow(response);
+        setSelectedCustomer(null);
+        setResult(null);
+        setLastFeedback(null);
+        setActivePanel("overview");
+        setIsPromptExpanded(false);
+      } catch (error) {
+        setWorkflowError(error instanceof Error ? error.message : "Unable to generate workflow response.");
+      }
     });
   };
 
@@ -166,6 +182,7 @@ export default function WorkflowPage() {
         (strategy) => strategy.id === workflow.arbiterDecision.selectedStrategyId,
       ) ?? workflow.plannerOutput.strategies[0]
     : null;
+  const targetName = workflow?.targetEntity.name ?? selectedCustomer?.name ?? "Northstar Fiber";
 
   return (
     <div className="page-stack">
@@ -181,7 +198,7 @@ export default function WorkflowPage() {
         <div className="hero-meta workflow-hero__meta">
           <article className="meta-stat">
             <span>Target</span>
-            <strong>{workflow?.targetEntity.name ?? "Northstar Fiber"}</strong>
+            <strong>{targetName}</strong>
           </article>
           <article className="meta-stat">
             <span>Request focus</span>
@@ -250,7 +267,7 @@ export default function WorkflowPage() {
                     className="button-secondary"
                     type="button"
                     onClick={() => {
-                      setPrompt(defaultPrompt);
+                      setPrompt(defaultPromptFor(targetName));
                       if (workflow) {
                         setIsPromptExpanded(false);
                       }
@@ -259,6 +276,13 @@ export default function WorkflowPage() {
                     {workflow ? "Collapse form" : "Reset prompt"}
                   </button>
                 </div>
+                {workflowError ? (
+                  <StatePanel
+                    title="Backend response needed"
+                    message={workflowError}
+                    tone="error"
+                  />
+                ) : null}
                 <p className="muted-copy workflow-prompt-note">
                   This request drives the account evidence, recommendation, and approval details shown here.
                 </p>
