@@ -63,6 +63,25 @@ Copy the sample environment file and update values if needed:
 ```bash
 cp .env.example .env.local
 ```
+LLM configuration supports OpenAI, Groq, and Anthropic.
+
+For final-quality OpenAI reasoning:
+
+```env
+STRATIQ_LLM_ENABLED=true
+STRATIQ_LLM_PROVIDER=openai
+OPENAI_API_KEY=your-key
+STRATIQ_OPENAI_MODEL=gpt-4o
+```
+
+For free or low-cost development with Groq:
+
+```env
+STRATIQ_LLM_ENABLED=true
+STRATIQ_LLM_PROVIDER=groq
+GROQ_API_KEY=your-key
+STRATIQ_GROQ_MODEL=llama-3.3-70b-versatile
+```
 
 Important variables:
 
@@ -76,7 +95,7 @@ Important variables:
 
 For Supabase, replace `DATABASE_URL` with the project Postgres connection string. The backend uses Postgres directly, so Supabase works as the hosted database layer.
 
-If `OPENAI_API_KEY` is missing or the model returns invalid JSON, the API logs the fallback path and still returns a complete deterministic recommendation.
+If OpenAI fails because of quota or rate limits, the provider layer can fall back to Groq when configured. If no LLM provider succeeds, the backend returns a deterministic, company-specific recommendation.
 
 ### 3. Start Postgres
 
@@ -171,5 +190,5 @@ Expected result: the selected customer, evidence, strategy, critique, final reco
 ## Implementation Notes
 
 - The backend uses LLM-first structured reasoning when configured, with deterministic fallback for demo reliability.
-- The provider abstraction supports OpenAI and Anthropic without exposing keys to the frontend.
+- The provider abstraction supports OpenAI, Groq, and Anthropic without exposing keys to the frontend.
 - Mock data is still present in the frontend as a graceful fallback if the API is unavailable during development.

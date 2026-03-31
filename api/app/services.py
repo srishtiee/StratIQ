@@ -854,6 +854,7 @@ def _persist_workflow(
         submitted_at=submitted_at,
     )
     session.add(workflow_run)
+    session.flush()
 
     for index, item in enumerate(draft.evidence, start=1):
         session.add(
@@ -991,6 +992,7 @@ def record_feedback(session: Session, payload: FeedbackPayload) -> RecordFeedbac
         )
     )
     session.commit()
+    session.refresh(workflow_run)
 
     return RecordFeedbackResponse(
         requestId=payload.requestId,

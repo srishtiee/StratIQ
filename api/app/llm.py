@@ -3,33 +3,34 @@ from __future__ import annotations
 import json
 from typing import Any
 
+import requests
+
 try:
     from anthropic import Anthropic
-except ImportError:  # pragma: no cover - optional dependency until installed
+except ImportError:
     Anthropic = None
 
 try:
     from openai import OpenAI
-except ImportError:  # pragma: no cover - optional dependency until installed
+except ImportError:
     OpenAI = None
 
 from .config import settings
 
 
 class LLMRequestError(RuntimeError):
-    """Raised when no configured LLM provider can return a usable JSON payload."""
+    pass
 
 
 def llm_is_enabled() -> bool:
     if not settings.llm_enabled:
         return False
 
-    provider = settings.llm_provider.lower().strip()
-    if provider == "openai":
-        return bool(settings.openai_api_key)
-    if provider == "anthropic":
-        return bool(settings.anthropic_api_key)
-    return bool(settings.openai_api_key or settings.anthropic_api_key)
+    return bool(
+        settings.openai_api_key
+        or settings.anthropic_api_key
+        or getattr(settings, "groq_api_key", None)
+    )
 
 
 def _dedupe(values: list[str]) -> list[str]:
@@ -76,16 +77,13 @@ def _call_openai(prompt: str, max_tokens: int) -> dict[str, Any]:
                 temperature=0.2,
                 max_tokens=max_tokens,
                 messages=[
-                    {
-                        "role": "system",
-                        "content": "Return only valid JSON with no markdown fences or commentary.",
-                    },
+                    {"role": "system", "content": "Return only valid JSON."},
                     {"role": "user", "content": prompt},
                 ],
             )
             text = response.choices[0].message.content or "{}"
             return _parse_json_payload(text)
-        except Exception as exc:  # pragma: no cover - network/provider behavior
+        except Exception as exc:
             errors.append(f"{model}: {exc}")
 
     raise LLMRequestError("OpenAI request failed. " + " | ".join(errors))
@@ -98,43 +96,89 @@ def _call_anthropic(prompt: str, max_tokens: int) -> dict[str, Any]:
         raise LLMRequestError("Anthropic client library is not installed.")
 
     client = Anthropic(api_key=settings.anthropic_api_key)
-    models = _dedupe([settings.anthropic_model])
-    errors: list[str] = []
 
-    for model in models:
-        try:
-            response = client.messages.create(
-                model=model,
-                max_tokens=max_tokens,
-                messages=[{"role": "user", "content": prompt}],
-            )
-            text = "".join(
-                block.text for block in response.content if getattr(block, "type", "") == "text"
-            )
-            return _parse_json_payload(text)
-        except Exception as exc:  # pragma: no cover - network/provider behavior
-            errors.append(f"{model}: {exc}")
+    try:
+        response = client.messages.create(
+            model=settings.anthropic_model,
+            max_tokens=max_tokens,
+            messages=[{"role": "user", "content": prompt}],
+        )
+        text = "".join(
+            block.text for block in response.content if getattr(block, "type", "") == "text"
+        )
+        return _parse_json_payload(text)
+    except Exception as exc:
+        raise LLMRequestError(f"Anthropic request failed: {exc}") from exc
 
-    raise LLMRequestError("Anthropic request failed. " + " | ".join(errors))
+
+def _call_groq(prompt: str, max_tokens: int) -> dict[str, Any]:
+    if not getattr(settings, "groq_api_key", None):
+        raise LLMRequestError("Groq API key is not configured.")
+
+    url = "https://api.groq.com/openai/v1/chat/completions"
+
+    headers = {
+        "Authorization": f"Bearer {settings.groq_api_key}",
+        "Content-Type": "application/json",
+    }
+
+    data = {
+        "model": getattr(settings, "groq_model", "llama-3.3-70b-versatile"),
+        "messages": [
+            {"role": "system", "content": "Return only valid JSON."},
+            {"role": "user", "content": prompt},
+        ],
+        "temperature": 0.3,
+        "max_tokens": max_tokens,
+    }
+
+    try:
+        response = requests.post(url, headers=headers, json=data)
+        response.raise_for_status()
+        text = response.json()["choices"][0]["message"]["content"]
+        return _parse_json_payload(text)
+    except Exception as exc:
+        raise LLMRequestError(f"Groq request failed: {exc}") from exc
 
 
 def generate_json(prompt: str, max_tokens: int | None = None) -> dict[str, Any]:
     if not llm_is_enabled():
-        raise LLMRequestError("LLM enhancement is disabled or no provider key is configured.")
+        raise LLMRequestError("LLM is disabled.")
 
     token_budget = max_tokens or settings.llm_max_tokens
     provider = settings.llm_provider.lower().strip()
-    attempts: list[str] = []
 
+    # PRIORITY FLOW
+
+    # 1. If explicitly OpenAI → fallback to Groq
     if provider == "openai":
-        return _call_openai(prompt, token_budget)
-    if provider == "anthropic":
-        return _call_anthropic(prompt, token_budget)
+        try:
+            return _call_openai(prompt, token_budget)
+        except LLMRequestError as e:
+            print(f"OpenAI failed → fallback to Groq: {e}")
+            try:
+                return _call_groq(prompt, token_budget)
+            except LLMRequestError as e2:
+                print(f"Groq failed: {e2}")
+                raise
 
-    for name, fn in (("openai", _call_openai), ("anthropic", _call_anthropic)):
+    # 2. If explicitly Groq
+    if provider == "groq":
+        return _call_groq(prompt, token_budget)
+
+    # 3. If explicitly Anthropic
+    if provider == "anthropic":
+        try:
+            return _call_anthropic(prompt, token_budget)
+        except LLMRequestError as e:
+            print(f"Anthropic failed → fallback to Groq: {e}")
+            return _call_groq(prompt, token_budget)
+
+    # 4. AUTO FALLBACK CHAIN
+    for fn in (_call_openai, _call_groq, _call_anthropic):
         try:
             return fn(prompt, token_budget)
-        except LLMRequestError as exc:
-            attempts.append(f"{name}: {exc}")
+        except LLMRequestError:
+            continue
 
-    raise LLMRequestError("No LLM provider succeeded. " + " | ".join(attempts))
+    raise LLMRequestError("All providers failed.")

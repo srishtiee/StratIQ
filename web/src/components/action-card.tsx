@@ -1,6 +1,15 @@
 import type { ActionResult, ApprovalRequest } from "@shared/contracts";
 import { StatusBadge } from "@/components/status-badge";
 
+function formatDate(value: string) {
+  return new Intl.DateTimeFormat("en-US", {
+    month: "2-digit",
+    day: "2-digit",
+    year: "numeric",
+    timeZone: "UTC",
+  }).format(new Date(value));
+}
+
 export function ActionCard({
   approval,
   result,
@@ -39,7 +48,7 @@ export function ActionCard({
         </div>
         <div className="detail-metric">
           <span>Created</span>
-          <strong>{new Date(approval.createdAt).toLocaleDateString()}</strong>
+          <strong>{formatDate(approval.createdAt)}</strong>
         </div>
       </div>
 

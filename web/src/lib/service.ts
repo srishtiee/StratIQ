@@ -20,23 +20,35 @@ import {
 } from "@/data/mock-data";
 
 const pause = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
-const requestTimeoutMs = 1800;
+
+const defaultRequestTimeoutMs = 8_000;
+const askRequestTimeoutMs = 60_000;
+
 let hasWarnedAboutFallback = false;
 
 export function getApiBaseUrl() {
   return process.env.NEXT_PUBLIC_STRATIQ_API_URL ?? "http://localhost:8000";
 }
 
-async function fetchFromApi<T>(path: string, init?: RequestInit): Promise<T | null> {
+type ApiRequestInit = RequestInit & {
+  timeoutMs?: number;
+};
+
+async function fetchFromApi<T>(path: string, init?: ApiRequestInit): Promise<T | null> {
   const controller = new AbortController();
-  const timeoutId = setTimeout(() => controller.abort(), requestTimeoutMs);
+  const timeoutId = setTimeout(
+    () => controller.abort(),
+    init?.timeoutMs ?? defaultRequestTimeoutMs,
+  );
+
+  const { timeoutMs: _timeoutMs, ...fetchInit } = init ?? {};
 
   try {
     const response = await fetch(`${getApiBaseUrl()}${path}`, {
-      ...init,
+      ...fetchInit,
       headers: {
         "Content-Type": "application/json",
-        ...(init?.headers ?? {}),
+        ...(fetchInit.headers ?? {}),
       },
       cache: "no-store",
       signal: controller.signal,
@@ -135,12 +147,16 @@ export async function submitAsk(payload: WorkflowRequest): Promise<WorkflowRespo
   const apiWorkflow = await fetchFromApi<WorkflowResponse>("/api/ask", {
     method: "POST",
     body: JSON.stringify(payload),
+    timeoutMs: askRequestTimeoutMs,
   });
+
   if (apiWorkflow) {
     return apiWorkflow;
   }
 
-  throw new Error("StratIQ API did not return a workflow response. Check that the FastAPI backend is running and connected to the database.");
+  throw new Error(
+    "StratIQ API did not return a workflow response. Check that the FastAPI backend is running and connected to the database.",
+  );
 }
 
 export async function submitFeedback(payload: FeedbackPayload) {
@@ -153,6 +169,7 @@ export async function submitFeedback(payload: FeedbackPayload) {
     method: "POST",
     body: JSON.stringify(payload),
   });
+
   if (apiFeedback) {
     return apiFeedback;
   }
@@ -171,6 +188,7 @@ export async function executeAction(payload: ApprovalActionPayload): Promise<Act
     method: "POST",
     body: JSON.stringify(payload),
   });
+
   if (apiAction) {
     return apiAction;
   }
@@ -188,7 +206,7 @@ export async function executeAction(payload: ApprovalActionPayload): Promise<Act
             ? "queued"
             : "approved",
     summary: "Approval state captured in the fallback action log.",
-    auditNote: "Mock action path recorded a local approval transition for demo continuity.",
+    auditNote: "Local fallback action path recorded an approval transition.",
     executedAt: new Date().toISOString(),
   };
 }
