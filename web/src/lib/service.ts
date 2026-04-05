@@ -23,6 +23,9 @@ const pause = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 
 const defaultRequestTimeoutMs = 8_000;
 const askRequestTimeoutMs = 60_000;
+const envDemoRole = process.env.NEXT_PUBLIC_STRATIQ_DEMO_ROLE ?? "executive";
+const envDemoUserId = process.env.NEXT_PUBLIC_STRATIQ_DEMO_USER_ID ?? "demo-exec";
+const envDemoUserName = process.env.NEXT_PUBLIC_STRATIQ_DEMO_USER_NAME ?? "Demo Executive";
 
 let hasWarnedAboutFallback = false;
 
@@ -30,8 +33,100 @@ export function getApiBaseUrl() {
   return process.env.NEXT_PUBLIC_STRATIQ_API_URL ?? "http://localhost:8000";
 }
 
+const ROLE_STORAGE_KEY = "stratiq-demo-role";
+const USER_ID_STORAGE_KEY = "stratiq-demo-user-id";
+const USER_NAME_STORAGE_KEY = "stratiq-demo-user-name";
+const LAST_CUSTOMER_KEY = "stratiq-last-customer-id";
+const ACTOR_CHANGED_EVENT = "stratiq:actor-changed";
+const CUSTOMER_CHANGED_EVENT = "stratiq:customer-changed";
+
+type RuntimeActor = {
+  role: string;
+  userId: string;
+  userName: string;
+};
+
+export class ApiError extends Error {
+  status: number;
+  constructor(status: number, message: string) {
+    super(message);
+    this.status = status;
+  }
+}
+
+export function getRuntimeActor(): RuntimeActor {
+  if (typeof window === "undefined") {
+    return { role: envDemoRole, userId: envDemoUserId, userName: envDemoUserName };
+  }
+  return {
+    role: window.localStorage.getItem(ROLE_STORAGE_KEY) ?? envDemoRole,
+    userId: window.localStorage.getItem(USER_ID_STORAGE_KEY) ?? envDemoUserId,
+    userName: window.localStorage.getItem(USER_NAME_STORAGE_KEY) ?? envDemoUserName,
+  };
+}
+
+export function setRuntimeActor(actor: RuntimeActor) {
+  if (typeof window === "undefined") {
+    return;
+  }
+  window.localStorage.setItem(ROLE_STORAGE_KEY, actor.role);
+  window.localStorage.setItem(USER_ID_STORAGE_KEY, actor.userId);
+  window.localStorage.setItem(USER_NAME_STORAGE_KEY, actor.userName);
+  window.dispatchEvent(new Event(ACTOR_CHANGED_EVENT));
+}
+
+export function subscribeRuntimeActor(listener: () => void): () => void {
+  if (typeof window === "undefined") {
+    return () => {};
+  }
+  const onStorage = (event: StorageEvent) => {
+    if (!event.key || [ROLE_STORAGE_KEY, USER_ID_STORAGE_KEY, USER_NAME_STORAGE_KEY].includes(event.key)) {
+      listener();
+    }
+  };
+  window.addEventListener("storage", onStorage);
+  window.addEventListener(ACTOR_CHANGED_EVENT, listener);
+  return () => {
+    window.removeEventListener("storage", onStorage);
+    window.removeEventListener(ACTOR_CHANGED_EVENT, listener);
+  };
+}
+
+export function getLastWorkflowCustomerId(): string | null {
+  if (typeof window === "undefined") {
+    return null;
+  }
+  return window.localStorage.getItem(LAST_CUSTOMER_KEY);
+}
+
+export function setLastWorkflowCustomerId(customerId: string) {
+  if (typeof window === "undefined") {
+    return;
+  }
+  window.localStorage.setItem(LAST_CUSTOMER_KEY, customerId);
+  window.dispatchEvent(new Event(CUSTOMER_CHANGED_EVENT));
+}
+
+export function subscribeLastWorkflowCustomer(listener: () => void): () => void {
+  if (typeof window === "undefined") {
+    return () => {};
+  }
+  const onStorage = (event: StorageEvent) => {
+    if (!event.key || event.key === LAST_CUSTOMER_KEY) {
+      listener();
+    }
+  };
+  window.addEventListener("storage", onStorage);
+  window.addEventListener(CUSTOMER_CHANGED_EVENT, listener);
+  return () => {
+    window.removeEventListener("storage", onStorage);
+    window.removeEventListener(CUSTOMER_CHANGED_EVENT, listener);
+  };
+}
+
 type ApiRequestInit = RequestInit & {
   timeoutMs?: number;
+  throwOnHttpError?: boolean;
 };
 
 async function fetchFromApi<T>(path: string, init?: ApiRequestInit): Promise<T | null> {
@@ -41,20 +136,37 @@ async function fetchFromApi<T>(path: string, init?: ApiRequestInit): Promise<T |
     init?.timeoutMs ?? defaultRequestTimeoutMs,
   );
 
-  const { timeoutMs: _timeoutMs, ...fetchInit } = init ?? {};
+  const { timeoutMs, throwOnHttpError, ...fetchInit } = init ?? {};
+  const actor = getRuntimeActor();
 
   try {
     const response = await fetch(`${getApiBaseUrl()}${path}`, {
       ...fetchInit,
       headers: {
         "Content-Type": "application/json",
+        "X-StratIQ-Role": actor.role,
+        "X-StratIQ-User-ID": actor.userId,
+        "X-StratIQ-User-Name": actor.userName,
         ...(fetchInit.headers ?? {}),
       },
       cache: "no-store",
       signal: controller.signal,
     });
+    void timeoutMs;
 
     if (!response.ok) {
+      if (throwOnHttpError) {
+        let detail = `HTTP ${response.status}`;
+        try {
+          const body = (await response.json()) as { detail?: string };
+          if (body.detail) {
+            detail = body.detail;
+          }
+        } catch {
+          // ignore parse errors
+        }
+        throw new ApiError(response.status, detail);
+      }
       warnAboutFallback(path, `HTTP ${response.status}`);
       return null;
     }
@@ -187,28 +299,13 @@ export async function executeAction(payload: ApprovalActionPayload): Promise<Act
   const apiAction = await fetchFromApi<ActionResult>("/api/action", {
     method: "POST",
     body: JSON.stringify(payload),
+    throwOnHttpError: true,
   });
 
   if (apiAction) {
     return apiAction;
   }
-
-  await pause(180);
-  return {
-    id: `action-${Date.now()}`,
-    approvalId: payload.approvalId,
-    status:
-      payload.decision === "reject"
-        ? "rejected"
-        : payload.decision === "execute"
-          ? "executed"
-          : payload.decision === "mark_ready"
-            ? "queued"
-            : "approved",
-    summary: "Approval state captured in the fallback action log.",
-    auditNote: "Local fallback action path recorded an approval transition.",
-    executedAt: new Date().toISOString(),
-  };
+  throw new Error("Action request returned no response.");
 }
 
 export function getMockActionHistory() {

@@ -17,11 +17,11 @@ export type IntentType =
   | "general_churn";
 
 export type ApprovalStatus =
-  | "Pending"
-  | "Ready"
-  | "Approved"
-  | "Rejected"
-  | "Executed";
+  | "pending"
+  | "approved"
+  | "rejected"
+  | "executed"
+  | "cancelled";
 
 export type ActionStatus = "queued" | "approved" | "rejected" | "executed";
 
@@ -183,4 +183,5 @@ export interface FeedbackPayload {
 export interface ApprovalActionPayload {
   approvalId: string;
   decision?: "approve" | "mark_ready" | "reject" | "execute";
+  reason?: string;
 }

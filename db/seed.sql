@@ -103,7 +103,7 @@ INSERT INTO run_decisions (id, run_id, planner_summary, planner_options, risk_ve
 ON CONFLICT (id) DO NOTHING;
 
 INSERT INTO approvals (id, run_id, customer_id, action_title, owner, priority, status, rationale, estimated_impact, due_label, created_at) VALUES
-  ('approval-002', 'run-002', 'c-204', 'Approve adoption reset and sponsor mapping package', 'RevOps Director', 'High', 'Approved', 'Usage recovery is still plausible if account ownership and adoption blockers are addressed quickly.', 'Improves expansion likelihood and reduces churn probability for a $1M account segment.', 'Review this week', '2026-04-29T16:10:00+00:00')
+  ('approval-002', 'run-002', 'c-204', 'Approve adoption reset and sponsor mapping package', 'RevOps Director', 'High', 'approved', 'Usage recovery is still plausible if account ownership and adoption blockers are addressed quickly.', 'Improves expansion likelihood and reduces churn probability for a $1M account segment.', 'Review this week', '2026-04-29T16:10:00+00:00')
 ON CONFLICT (id) DO NOTHING;
 
 INSERT INTO actions (id, approval_id, status, summary, audit_note, executed_at) VALUES
@@ -113,4 +113,10 @@ ON CONFLICT (id) DO NOTHING;
 INSERT INTO audit_records (id, run_id, approval_id, event_type, actor, message, created_at) VALUES
   ('audit-001', 'run-002', 'approval-002', 'workflow_run', 'StratIQ', 'Aster Retail Group package created and surfaced for review.', '2026-04-29T16:12:00+00:00'),
   ('audit-002', NULL, 'approval-002', 'approval', 'Customer Success Director', 'Aster Retail Group package moved to Approved status.', '2026-04-29T16:20:00+00:00')
+ON CONFLICT (id) DO NOTHING;
+
+INSERT INTO document_chunks (id, customer_id, source_type, source_id, title, content) VALUES
+  ('dc-001', 'c-102', 'customer_note', 'note-001', 'Executive sponsor concern', 'Sponsor asked for a dated reliability plan and accountable owner before renewal.'),
+  ('dc-002', 'c-204', 'customer_note', 'note-002', 'Commercial committee context', 'Buying committee requested competitor benchmark and value proof before concessions.'),
+  ('dc-003', NULL, 'playbook', 'playbook-001', 'Risk review baseline', 'When evidence depth is low, recommendations should be flagged provisional and approval criteria tightened.')
 ON CONFLICT (id) DO NOTHING;

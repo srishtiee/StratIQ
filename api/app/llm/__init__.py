@@ -1,5 +1,5 @@
-from .config import settings
-from .llm.providers import generate_llm_json
+from ..config import settings
+from .providers import generate_llm_json
 
 
 class LLMRequestError(RuntimeError):
@@ -15,3 +15,6 @@ def generate_json(prompt: str, max_tokens: int | None = None) -> dict:
     if result.payload is None:
         raise LLMRequestError(result.fallback_reason or "deterministic mode")
     return result.payload
+
+
+__all__ = ["generate_llm_json", "generate_json", "llm_is_enabled", "LLMRequestError"]

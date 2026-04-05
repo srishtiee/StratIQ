@@ -113,7 +113,7 @@ export const approvals: ApprovalRequest[] = [
     actionTitle: "Approve sponsor recovery motion and hold commercial save lever",
     owner: "Customer Success Director",
     priority: "Urgent",
-    status: "Pending",
+    status: "pending",
     rationale:
       "This route addresses trust risk first while preserving commercial flexibility if pricing resistance emerges.",
     estimatedImpact: "Protects up to $372k ARR exposure in the current renewal cycle.",
@@ -128,7 +128,7 @@ export const approvals: ApprovalRequest[] = [
     actionTitle: "Approve adoption reset and sponsor mapping package",
     owner: "RevOps Director",
     priority: "High",
-    status: "Ready",
+    status: "approved",
     rationale:
       "Usage contraction appears recoverable if account ownership and adoption blockers are addressed before renewal planning begins.",
     estimatedImpact: "Improves expansion likelihood and reduces churn probability for a $1M account segment.",
@@ -179,7 +179,7 @@ export const dashboardInsights: DashboardInsights = {
   portfolioAtRisk: 19,
   renewalWindow: 6,
   executiveConfidence: "78%",
-  actionQueue: approvals.filter((approval) => approval.status !== "Executed").length,
+  actionQueue: approvals.filter((approval) => approval.status !== "executed").length,
   riskMix: [
     { label: "Critical", count: 4, accent: "#c45c56" },
     { label: "High", count: 8, accent: "#c9852a" },

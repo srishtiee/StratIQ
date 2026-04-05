@@ -2,6 +2,7 @@ import Link from "next/link";
 import { CustomerTable } from "@/components/customer-table";
 import { KpiCard } from "@/components/kpi-card";
 import { StatePanel } from "@/components/state-panel";
+import { WorkflowLink } from "@/components/workflow-link";
 import { getDashboardInsights, listCustomers } from "@/lib/service";
 
 export default async function DashboardPage() {
@@ -17,9 +18,11 @@ export default async function DashboardPage() {
             StratIQ helps revenue, customer success, and operations leaders identify churn risk, review evidence, and approve the next best retention action without forcing a rip-and-replace of the systems they already use.
           </p>
           <div className="button-row" style={{ marginTop: "1rem" }}>
-            <Link className="button-primary" href="/workflow">
-              View decision workflow
-            </Link>
+            <WorkflowLink
+              className="button-primary"
+              label="View decision workflow"
+              fallbackCustomerId={customers[0]?.id}
+            />
             <Link className="button-secondary" href="/approvals">
               Review approval queue
             </Link>

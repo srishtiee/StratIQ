@@ -65,11 +65,19 @@ class ApprovalRequest(BaseModel):
     actionTitle: str
     owner: str
     priority: Literal["Normal", "High", "Urgent"]
-    status: Literal["Pending", "Ready", "Approved", "Rejected", "Executed"]
+    status: Literal["pending", "approved", "rejected", "executed", "cancelled"]
     rationale: str
     estimatedImpact: str
     dueLabel: str
     createdAt: str
+    actorIdCreatedBy: str | None = None
+    approvedBy: str | None = None
+    approvedAt: str | None = None
+    rejectedBy: str | None = None
+    rejectedAt: str | None = None
+    executedBy: str | None = None
+    executedAt: str | None = None
+    rejectionReason: str | None = None
 
 
 class ActionResult(BaseModel):
@@ -98,6 +106,11 @@ class AuditRecord(BaseModel):
     actor: str
     message: str
     createdAt: str
+    requestId: str | None = None
+    actorId: str | None = None
+    actorRole: str | None = None
+    entityType: str | None = None
+    entityId: str | None = None
 
 
 class WorkflowRequest(BaseModel):
@@ -115,6 +128,7 @@ class FeedbackPayload(BaseModel):
 class ApprovalActionPayload(BaseModel):
     approvalId: str
     decision: Literal["approve", "mark_ready", "reject", "execute"] = "approve"
+    reason: str | None = None
 
 
 class TargetEntity(BaseModel):
@@ -130,6 +144,7 @@ class WorkflowResponse(BaseModel):
     detectedIntent: IntentType
     requestSummary: str
     status: Literal["pending", "completed", "needs_review", "approved"]
+    correlationId: str | None = None
     targetEntity: TargetEntity
     summary: str
     evidence: list[EvidenceItem]
@@ -176,6 +191,7 @@ class DashboardInsights(BaseModel):
 class HealthResponse(BaseModel):
     status: str
     database: str
+    requestId: str | None = None
 
 
 class RecordFeedbackResponse(BaseModel):

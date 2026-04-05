@@ -14,14 +14,11 @@ export function LaneSection({
   const badgeStatus =
     status === "pending" ||
     status === "needs_review" ||
-    status === "ready" ||
-    status === "Pending" ||
-    status === "Ready"
+    status === "ready"
       ? "reviewing"
       : status === "completed" ||
           status === "approved" ||
-          status === "Approved" ||
-          status === "Executed"
+          status === "executed"
         ? "approved"
         : status;
 

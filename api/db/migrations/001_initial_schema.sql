@@ -145,6 +145,6 @@ CREATE TABLE IF NOT EXISTS document_chunks (
   source_id TEXT NOT NULL,
   title TEXT NOT NULL,
   content TEXT NOT NULL,
-  embedding TEXT,
+  embedding TEXT NULL,
   created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );

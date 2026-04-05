@@ -12,8 +12,20 @@ import type {
 import { ActionCard } from "@/components/action-card";
 import { EvidencePanel } from "@/components/evidence-panel";
 import { LaneSection } from "@/components/lane-section";
+import { RejectReasonModal } from "@/components/reject-reason-modal";
 import { StatePanel } from "@/components/state-panel";
-import { executeAction, getCustomerById, getLatestWorkflow, submitAsk, submitFeedback } from "@/lib/service";
+import {
+  ApiError,
+  executeAction,
+  getCustomerById,
+  getLatestWorkflow,
+  getRuntimeActor,
+  getLastWorkflowCustomerId,
+  setLastWorkflowCustomerId,
+  submitAsk,
+  submitFeedback,
+  subscribeRuntimeActor,
+} from "@/lib/service";
 
 const defaultPromptFor = (customerName = "Northstar Fiber") =>
   `Why did churn risk increase for ${customerName}, and which retention action should leadership approve first?`;
@@ -46,20 +58,34 @@ export default function WorkflowPage() {
   );
   const [isPromptExpanded, setIsPromptExpanded] = useState(true);
   const [isPending, startTransition] = useTransition();
+  const [actor, setActor] = useState(() => getRuntimeActor());
+  const [showRejectModal, setShowRejectModal] = useState(false);
+
+  useEffect(() => subscribeRuntimeActor(() => setActor(getRuntimeActor())), []);
+
+  const normalizedStatus = workflow?.approval.status.toLowerCase();
+  const canActByRole = ["approver", "executive", "admin"].includes(actor.role);
+  const canApproveOrReject = Boolean(workflow && canActByRole && normalizedStatus === "pending");
+  const canExecute = Boolean(workflow && canActByRole && normalizedStatus === "approved");
 
   useEffect(() => {
     let active = true;
+    const rememberedCustomerId = getLastWorkflowCustomerId();
+    const activeCustomerId = customerId ?? rememberedCustomerId;
 
     startTransition(async () => {
       const [customer, latestWorkflow] = await Promise.all([
-        customerId ? getCustomerById(customerId) : Promise.resolve(undefined),
-        getLatestWorkflow(customerId ?? undefined),
+        activeCustomerId ? getCustomerById(activeCustomerId) : Promise.resolve(undefined),
+        getLatestWorkflow(activeCustomerId ?? undefined),
       ]);
       if (!active) {
         return;
       }
 
       const targetName = customer?.name ?? latestWorkflow?.targetEntity.name ?? "Northstar Fiber";
+      if (customer?.id ?? latestWorkflow?.targetEntity.id) {
+        setLastWorkflowCustomerId(customer?.id ?? latestWorkflow?.targetEntity.id ?? "");
+      }
       setSelectedCustomer(customer ?? null);
       setWorkflowError(null);
 
@@ -89,42 +115,81 @@ export default function WorkflowPage() {
     if (!workflow) {
       return;
     }
+    if (!canActByRole) {
+      setWorkflowError(`Role '${actor.role}' cannot approve or execute actions.`);
+      return;
+    }
+    if (decision === "execute" && !canExecute) {
+      setWorkflowError("Only approved actions can be executed.");
+      return;
+    }
+    if (decision !== "execute" && !canApproveOrReject) {
+      setWorkflowError("Only pending approvals can be approved or rejected.");
+      return;
+    }
+    if (decision === "reject") {
+      setShowRejectModal(true);
+      return;
+    }
+    void runAction(decision);
+  };
 
-    startTransition(async () => {
-      const action = await executeAction({
-        approvalId: workflow.approval.id,
-        decision,
-      });
-      setResult(action);
+  const runAction = (
+    decision: "approve" | "mark_ready" | "reject" | "execute",
+    reason?: string,
+  ): Promise<string | null> => {
+    if (!workflow) {
+      return Promise.resolve("Workflow is unavailable.");
+    }
+    return new Promise<string | null>((resolve) => startTransition(async () => {
+      try {
+        const action = await executeAction({
+          approvalId: workflow.approval.id,
+          decision,
+          reason,
+        });
+        setResult(action);
+        setWorkflowError(null);
 
-      const statusMap: Record<typeof decision, ApprovalStatus> = {
-        approve: "Approved",
-        mark_ready: "Ready",
-        reject: "Rejected",
-        execute: "Executed",
-      };
+        const statusMap: Record<typeof decision, ApprovalStatus> = {
+          approve: "approved",
+          mark_ready: "approved",
+          reject: "rejected",
+          execute: "executed",
+        };
 
-      setWorkflow({
-        ...workflow,
-        approval: {
-          ...workflow.approval,
-          status: statusMap[decision],
-        },
-        actionHistory: [action, ...workflow.actionHistory],
-        auditRecords: [
-          {
-            id: `audit-local-${Date.now()}`,
-            runId: workflow.requestId,
-            approvalId: workflow.approval.id,
-            eventType: decision === "execute" ? "action" : "approval",
-            actor: "Operator",
-            message: action.summary,
-            createdAt: action.executedAt ?? new Date().toISOString(),
+        setWorkflow({
+          ...workflow,
+          approval: {
+            ...workflow.approval,
+            status: statusMap[decision],
           },
-          ...workflow.auditRecords,
-        ],
-      });
-    });
+          actionHistory: [action, ...workflow.actionHistory],
+          auditRecords: [
+            {
+              id: `audit-local-${Date.now()}`,
+              runId: workflow.requestId,
+              approvalId: workflow.approval.id,
+              eventType: decision === "execute" ? "action" : "approval",
+              actor: actor.userName,
+              message: action.summary,
+              createdAt: action.executedAt ?? new Date().toISOString(),
+            },
+            ...workflow.auditRecords,
+          ],
+        });
+        resolve(null);
+      } catch (error) {
+        const message =
+          error instanceof ApiError
+            ? `Action blocked (${error.status}): ${error.message}`
+            : error instanceof Error
+              ? error.message
+              : "Action failed.";
+        setWorkflowError(message);
+        resolve(message);
+      }
+    }));
   };
 
   const handleSubmit = () => {
@@ -133,8 +198,9 @@ export default function WorkflowPage() {
         setWorkflowError(null);
         const response = await submitAsk({
           prompt,
-          focusCustomerId: customerId ?? undefined,
+          focusCustomerId: customerId ?? selectedCustomer?.id ?? workflow?.targetEntity.id,
         });
+        setLastWorkflowCustomerId(response.targetEntity.id);
         setWorkflow(response);
         setSelectedCustomer(null);
         setResult(null);
@@ -142,7 +208,15 @@ export default function WorkflowPage() {
         setActivePanel("overview");
         setIsPromptExpanded(false);
       } catch (error) {
-        setWorkflowError(error instanceof Error ? error.message : "Unable to generate workflow response.");
+        setWorkflowError(
+          error instanceof ApiError && error.status === 403
+            ? `Role '${actor.role}' cannot submit Ask requests. Switch to executive, analyst, or admin.`
+            : error instanceof ApiError && error.status === 409
+              ? `Request blocked: ${error.message}`
+              : error instanceof Error
+                ? error.message
+                : "Unable to generate workflow response.",
+        );
       }
     });
   };
@@ -489,20 +563,36 @@ export default function WorkflowPage() {
             <>
               <ActionCard approval={workflow.approval} result={result} className="approval-card--workflow">
                 <div className="button-row">
-                  <button className="button-secondary" type="button" onClick={() => handleAction("mark_ready")}>
+                  <button className="button-secondary" type="button" onClick={() => handleAction("mark_ready")} disabled={isPending || !canApproveOrReject}>
                     Mark ready
                   </button>
-                  <button className="button-secondary" type="button" onClick={() => handleAction("reject")}>
+                  <button className="button-secondary" type="button" onClick={() => handleAction("reject")} disabled={isPending || !canApproveOrReject}>
                     Reject
                   </button>
-                  <button className="button-primary" type="button" onClick={() => handleAction("approve")}>
+                  <button className="button-primary" type="button" onClick={() => handleAction("approve")} disabled={isPending || !canApproveOrReject}>
                     Approve
                   </button>
-                  <button className="button-primary" type="button" onClick={() => handleAction("execute")}>
+                  <button className="button-primary" type="button" onClick={() => handleAction("execute")} disabled={isPending || !canExecute}>
                     Execute log
                   </button>
                 </div>
               </ActionCard>
+              <RejectReasonModal
+                key={showRejectModal ? "workflow-reject-open" : "workflow-reject-closed"}
+                open={showRejectModal}
+                pending={isPending}
+                onCancel={() => setShowRejectModal(false)}
+                onConfirm={async (reason) => {
+                  if (!workflow) {
+                    return "Workflow is no longer available.";
+                  }
+                  const actionError = await runAction("reject", reason);
+                  if (!actionError) {
+                    setShowRejectModal(false);
+                  }
+                  return actionError;
+                }}
+              />
               <div className="workflow-side-notes">
                 <div className="button-row button-row--compact">
                   <LinkToApprovals />

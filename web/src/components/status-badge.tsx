@@ -14,24 +14,32 @@ const toneMap: Record<string, string> = {
   High: "high",
   Moderate: "moderate",
   Low: "low",
-  Pending: "pending",
-  Ready: "ready",
-  Approved: "approved",
-  Rejected: "critical",
-  Executed: "executed",
-  queued: "ready",
+  pending: "pending",
+  approved: "approved",
   rejected: "critical",
-  executed: "approved",
+  executed: "executed",
+  cancelled: "critical",
+  queued: "ready",
   reviewing: "reviewing",
   ready: "ready",
-  approved: "approved",
-  pending: "pending",
   completed: "approved",
   needs_review: "high",
 };
 
 export function StatusBadge({ value }: { value: BadgeValue }) {
   const tone = toneMap[value] ?? "pending";
+  const label =
+    value === "pending"
+      ? "Pending"
+      : value === "approved"
+        ? "Approved"
+        : value === "rejected"
+          ? "Rejected"
+          : value === "executed"
+            ? "Executed"
+            : value === "cancelled"
+              ? "Cancelled"
+              : value;
 
-  return <span className={`status-badge status-badge--${tone}`}>{value}</span>;
+  return <span className={`status-badge status-badge--${tone}`}>{label}</span>;
 }

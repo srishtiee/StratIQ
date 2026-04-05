@@ -9,6 +9,7 @@ from .models import (
     Approval,
     AuditRecord,
     Customer,
+    DocumentChunk,
     Feedback,
     RunDecision,
     RunEvidence,
@@ -280,6 +281,12 @@ TICKET_SEED = [
      "Marketing operations wants clearer roadmap dates before expanding audience analytics usage."),
 ]
 
+DOCUMENT_CHUNK_SEED = [
+    ("dc-001", "c-102", "customer_note", "note-001", "Executive sponsor concern", "Sponsor asked for a dated reliability plan and accountable owner before renewal."),
+    ("dc-002", "c-204", "customer_note", "note-002", "Commercial committee context", "Buying committee requested competitor benchmark and value proof before concessions."),
+    ("dc-003", None, "playbook", "playbook-001", "Risk review baseline", "When evidence depth is low, recommendations should be flagged provisional and approval criteria tightened."),
+]
+
 
 def _append_demo_history(session: Session) -> None:
     workflow_run = WorkflowRun(
@@ -352,7 +359,7 @@ def _append_demo_history(session: Session) -> None:
             action_title="Approve adoption reset and sponsor mapping package",
             owner="RevOps Director",
             priority="High",
-            status="Approved",
+            status="approved",
             rationale="Usage recovery is still plausible if account ownership and adoption blockers are addressed quickly.",
             estimated_impact="Improves expansion likelihood and reduces churn probability for a $1M account segment.",
             due_label="Review this week",
@@ -426,6 +433,18 @@ def seed_database(session: Session) -> None:
                 severity=severity,
                 status=status,
                 snippet=snippet,
+            )
+        )
+
+    for chunk_id, customer_id, source_type, source_id, title, content in DOCUMENT_CHUNK_SEED:
+        session.merge(
+            DocumentChunk(
+                id=chunk_id,
+                customer_id=customer_id,
+                source_type=source_type,
+                source_id=source_id,
+                title=title,
+                content=content,
             )
         )
 

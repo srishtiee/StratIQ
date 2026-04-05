@@ -65,7 +65,13 @@ class WorkflowRun(Base):
     request_summary: Mapped[str] = mapped_column(Text)
     summary: Mapped[str] = mapped_column(Text)
     status: Mapped[str] = mapped_column(String(40))
+    request_id: Mapped[str | None] = mapped_column(String(64), index=True, nullable=True)
+    actor_id: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    actor_name: Mapped[str | None] = mapped_column(String(120), nullable=True)
+    actor_role: Mapped[str | None] = mapped_column(String(40), nullable=True)
+    metadata_json: Mapped[dict | None] = mapped_column(JSON, nullable=True)
     submitted_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+    completed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
 
 
 class RunEvidence(Base):
@@ -107,6 +113,14 @@ class Approval(Base):
     owner: Mapped[str] = mapped_column(String(120))
     priority: Mapped[str] = mapped_column(String(40))
     status: Mapped[str] = mapped_column(String(40))
+    actor_id_created_by: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    approved_by: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    approved_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    rejected_by: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    rejected_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    executed_by: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    executed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    rejection_reason: Mapped[str | None] = mapped_column(Text, nullable=True)
     rationale: Mapped[str] = mapped_column(Text)
     estimated_impact: Mapped[str] = mapped_column(String(200))
     due_label: Mapped[str] = mapped_column(String(120))
@@ -140,7 +154,28 @@ class AuditRecord(Base):
     id: Mapped[str] = mapped_column(String(64), primary_key=True)
     run_id: Mapped[str | None] = mapped_column(ForeignKey("workflow_runs.id"), nullable=True, index=True)
     approval_id: Mapped[str | None] = mapped_column(ForeignKey("approvals.id"), nullable=True, index=True)
+    request_id: Mapped[str | None] = mapped_column(String(64), index=True, nullable=True)
+    actor_id: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    actor_name: Mapped[str | None] = mapped_column(String(120), nullable=True)
+    actor_role: Mapped[str | None] = mapped_column(String(40), nullable=True)
     event_type: Mapped[str] = mapped_column(String(40))
+    entity_type: Mapped[str | None] = mapped_column(String(80), nullable=True)
+    entity_id: Mapped[str | None] = mapped_column(String(80), nullable=True)
+    before_state: Mapped[dict | None] = mapped_column(JSON, nullable=True)
+    after_state: Mapped[dict | None] = mapped_column(JSON, nullable=True)
     actor: Mapped[str] = mapped_column(String(120))
     message: Mapped[str] = mapped_column(Text)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+
+
+class DocumentChunk(Base):
+    __tablename__ = "document_chunks"
+
+    id: Mapped[str] = mapped_column(String(64), primary_key=True)
+    customer_id: Mapped[str | None] = mapped_column(ForeignKey("customers.id"), nullable=True, index=True)
+    source_type: Mapped[str] = mapped_column(String(80))
+    source_id: Mapped[str] = mapped_column(String(80))
+    title: Mapped[str] = mapped_column(String(200))
+    content: Mapped[str] = mapped_column(Text)
+    embedding: Mapped[str | None] = mapped_column(Text, nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
