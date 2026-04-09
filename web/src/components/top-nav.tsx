@@ -15,7 +15,7 @@ const roles = ["executive", "approver", "analyst", "admin", "viewer"] as const;
 
 export function TopNav() {
   const pathname = usePathname();
-  const [role, setRole] = useState<string>(() => getRuntimeActor().role);
+  const [actor, setActor] = useState(() => getRuntimeActor());
   const [workflowHref, setWorkflowHref] = useState<string>(() => {
     const customerId = getLastWorkflowCustomerId();
     return customerId ? `/workflow?customer=${customerId}` : "/workflow";
@@ -24,7 +24,7 @@ export function TopNav() {
   useEffect(
     () =>
       subscribeRuntimeActor(() => {
-        setRole(getRuntimeActor().role);
+        setActor(getRuntimeActor());
         const customerId = getLastWorkflowCustomerId();
         setWorkflowHref(customerId ? `/workflow?customer=${customerId}` : "/workflow");
       }),
@@ -47,7 +47,11 @@ export function TopNav() {
   ];
 
   const onRoleChange = (nextRole: string) => {
-    setRole(nextRole);
+    setActor({
+      role: nextRole,
+      userId: `demo-${nextRole}`,
+      userName: `Demo ${nextRole[0].toUpperCase()}${nextRole.slice(1)}`,
+    });
     setRuntimeActor({
       role: nextRole,
       userId: `demo-${nextRole}`,
@@ -93,7 +97,7 @@ export function TopNav() {
           >
             Role
             <select
-              value={role}
+              value={actor.role}
               onChange={(event) => onRoleChange(event.target.value)}
               style={{
                 borderRadius: "999px",
@@ -110,9 +114,16 @@ export function TopNav() {
             </select>
           </label>
         ) : (
-          <span className="muted-copy" style={{ fontSize: "0.85rem" }}>
-            Role: {role}
-          </span>
+          <div style={{ display: "grid", justifyItems: "end", gap: "0.2rem" }}>
+            <span className="muted-copy" style={{ fontSize: "0.85rem" }}>
+              {actor.userName} ({actor.role})
+            </span>
+            <div className="button-row button-row--compact">
+              <Link className="button-secondary" href="/login" style={{ padding: "0.45rem 0.8rem" }}>
+                Switch user
+              </Link>
+            </div>
+          </div>
         )}
       </div>
     </header>

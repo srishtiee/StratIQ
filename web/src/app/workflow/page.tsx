@@ -64,6 +64,7 @@ export default function WorkflowPage() {
   useEffect(() => subscribeRuntimeActor(() => setActor(getRuntimeActor())), []);
 
   const normalizedStatus = workflow?.approval.status.toLowerCase();
+  const canAskByRole = ["executive", "analyst", "admin"].includes(actor.role);
   const canActByRole = ["approver", "executive", "admin"].includes(actor.role);
   const canApproveOrReject = Boolean(workflow && canActByRole && normalizedStatus === "pending");
   const canExecute = Boolean(workflow && canActByRole && normalizedStatus === "approved");
@@ -193,6 +194,10 @@ export default function WorkflowPage() {
   };
 
   const handleSubmit = () => {
+    if (!canAskByRole) {
+      setWorkflowError(`Role '${actor.role}' cannot submit Ask requests. Switch to executive, analyst, or admin.`);
+      return;
+    }
     startTransition(async () => {
       try {
         setWorkflowError(null);
@@ -307,7 +312,7 @@ export default function WorkflowPage() {
                     className="button-primary"
                     type="button"
                     onClick={handleSubmit}
-                    disabled={isPending}
+                    disabled={isPending || !canAskByRole}
                   >
                     {isPending ? "Running workflow..." : "Rerun package"}
                   </button>
@@ -334,7 +339,7 @@ export default function WorkflowPage() {
                   onChange={(event) => setPrompt(event.target.value)}
                 />
                 <div className="button-row">
-                  <button className="button-primary" type="button" onClick={handleSubmit} disabled={isPending}>
+                  <button className="button-primary" type="button" onClick={handleSubmit} disabled={isPending || !canAskByRole}>
                     {isPending ? "Running workflow..." : "Generate decision package"}
                   </button>
                   <button
@@ -355,6 +360,12 @@ export default function WorkflowPage() {
                     title="Backend response needed"
                     message={workflowError}
                     tone="error"
+                  />
+                ) : null}
+                {!canAskByRole ? (
+                  <StatePanel
+                    title="Ask restricted for this role"
+                    message="Viewer and approver roles can review evidence and approvals, but cannot generate new decision packages."
                   />
                 ) : null}
                 <p className="muted-copy workflow-prompt-note">

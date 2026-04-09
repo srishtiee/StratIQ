@@ -12,6 +12,7 @@ StratIQ is a dashboard-first, AI-assisted executive decision-support prototype. 
   - Prototype RBAC with header auth (`X-StratIQ-User-ID`, `X-StratIQ-User-Name`, `X-StratIQ-Role`)
   - Approval/action state transitions with transition audit records
   - Deterministic reasoning default with optional Grok/OpenAI fallback behavior
+  - Demo login screen with pre-registered users mapped to roles (`/login`)
 - **Prototype implementation**
   - Audit trail is writable (not immutable/WORM)
   - Auth is header-based demo mode, not production identity federation
@@ -69,3 +70,14 @@ npm run build:web
 - `OPENAI_API_KEY` (optional)
 - `NEXT_PUBLIC_STRATIQ_DEMO_ROLE` / `NEXT_PUBLIC_STRATIQ_DEMO_USER_ID` / `NEXT_PUBLIC_STRATIQ_DEMO_USER_NAME`
 - `NEXT_PUBLIC_STRATIQ_ENABLE_ROLE_SWITCHER=true|false` (dev-only testing control; prefer `false` in realistic demos)
+
+Demo users for `/login`:
+- `exec@stratiq.demo` -> executive
+- `approver@stratiq.demo` -> approver
+- `analyst@stratiq.demo` -> analyst
+- `admin@stratiq.demo` -> admin
+- `viewer@stratiq.demo` -> viewer
+
+Routes are login-gated in the frontend demo shell:
+- `/` redirects to `/login`
+- unauthenticated navigation to app pages redirects to `/login`

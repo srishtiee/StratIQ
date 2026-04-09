@@ -28,6 +28,7 @@ const envDemoUserId = process.env.NEXT_PUBLIC_STRATIQ_DEMO_USER_ID ?? "demo-exec
 const envDemoUserName = process.env.NEXT_PUBLIC_STRATIQ_DEMO_USER_NAME ?? "Demo Executive";
 
 let hasWarnedAboutFallback = false;
+const customerSummaryCache = new Map<string, CustomerRiskSummary>();
 
 export function getApiBaseUrl() {
   return process.env.NEXT_PUBLIC_STRATIQ_API_URL ?? "http://localhost:8000";
@@ -39,12 +40,23 @@ const USER_NAME_STORAGE_KEY = "stratiq-demo-user-name";
 const LAST_CUSTOMER_KEY = "stratiq-last-customer-id";
 const ACTOR_CHANGED_EVENT = "stratiq:actor-changed";
 const CUSTOMER_CHANGED_EVENT = "stratiq:customer-changed";
+const DEMO_SESSION_KEY = "stratiq-demo-session";
+const SESSION_CHANGED_EVENT = "stratiq:session-changed";
 
-type RuntimeActor = {
+export type RuntimeActor = {
   role: string;
   userId: string;
   userName: string;
 };
+export type DemoUser = RuntimeActor & { email: string };
+
+const DEMO_USERS: DemoUser[] = [
+  { email: "exec@stratiq.demo", userId: "demo-exec", userName: "Demo Executive", role: "executive" },
+  { email: "approver@stratiq.demo", userId: "demo-approver", userName: "Demo Approver", role: "approver" },
+  { email: "analyst@stratiq.demo", userId: "demo-analyst", userName: "Demo Analyst", role: "analyst" },
+  { email: "admin@stratiq.demo", userId: "demo-admin", userName: "Demo Admin", role: "admin" },
+  { email: "viewer@stratiq.demo", userId: "demo-viewer", userName: "Demo Viewer", role: "viewer" },
+];
 
 export class ApiError extends Error {
   status: number;
@@ -72,7 +84,58 @@ export function setRuntimeActor(actor: RuntimeActor) {
   window.localStorage.setItem(ROLE_STORAGE_KEY, actor.role);
   window.localStorage.setItem(USER_ID_STORAGE_KEY, actor.userId);
   window.localStorage.setItem(USER_NAME_STORAGE_KEY, actor.userName);
+  window.localStorage.setItem(DEMO_SESSION_KEY, "active");
   window.dispatchEvent(new Event(ACTOR_CHANGED_EVENT));
+  window.dispatchEvent(new Event(SESSION_CHANGED_EVENT));
+}
+
+export function clearRuntimeActorOverride() {
+  if (typeof window === "undefined") {
+    return;
+  }
+  window.localStorage.removeItem(ROLE_STORAGE_KEY);
+  window.localStorage.removeItem(USER_ID_STORAGE_KEY);
+  window.localStorage.removeItem(USER_NAME_STORAGE_KEY);
+  window.localStorage.removeItem(DEMO_SESSION_KEY);
+  window.dispatchEvent(new Event(ACTOR_CHANGED_EVENT));
+  window.dispatchEvent(new Event(SESSION_CHANGED_EVENT));
+}
+
+export function getDemoUsers(): DemoUser[] {
+  return DEMO_USERS;
+}
+
+export function loginAsDemoUser(email: string): boolean {
+  const selected = DEMO_USERS.find((user) => user.email === email);
+  if (!selected) {
+    return false;
+  }
+  setRuntimeActor(selected);
+  return true;
+}
+
+export function hasDemoSession(): boolean {
+  if (typeof window === "undefined") {
+    return false;
+  }
+  return window.localStorage.getItem(DEMO_SESSION_KEY) === "active";
+}
+
+export function subscribeDemoSession(listener: () => void): () => void {
+  if (typeof window === "undefined") {
+    return () => {};
+  }
+  const onStorage = (event: StorageEvent) => {
+    if (!event.key || event.key === DEMO_SESSION_KEY) {
+      listener();
+    }
+  };
+  window.addEventListener("storage", onStorage);
+  window.addEventListener(SESSION_CHANGED_EVENT, listener);
+  return () => {
+    window.removeEventListener("storage", onStorage);
+    window.removeEventListener(SESSION_CHANGED_EVENT, listener);
+  };
 }
 
 export function subscribeRuntimeActor(listener: () => void): () => void {
@@ -208,21 +271,42 @@ export async function getDashboardInsights(): Promise<DashboardInsights> {
 export async function listCustomers(): Promise<CustomerRiskSummary[]> {
   const apiCustomers = await fetchFromApi<CustomerRiskSummary[]>("/api/customers");
   if (apiCustomers) {
+    for (const customer of apiCustomers) {
+      customerSummaryCache.set(customer.id, customer);
+    }
     return apiCustomers;
   }
 
   await pause(120);
+  for (const customer of customers) {
+    customerSummaryCache.set(customer.id, customer);
+  }
   return customers;
 }
 
 export async function getCustomerById(id: string): Promise<CustomerDetail | undefined> {
   const apiCustomer = await fetchFromApi<CustomerDetail>(`/api/customers/${id}`);
   if (apiCustomer) {
+    customerSummaryCache.set(apiCustomer.id, apiCustomer);
     return apiCustomer;
   }
 
   await pause(120);
-  return customerDetails.find((customer) => customer.id === id);
+  const detail = customerDetails.find((customer) => customer.id === id);
+  if (detail) {
+    customerSummaryCache.set(detail.id, detail);
+    return detail;
+  }
+  const summary = customerSummaryCache.get(id);
+  if (!summary) {
+    return undefined;
+  }
+  return {
+    ...summary,
+    evidence: [],
+    recentRuns: [],
+    latestApproval: null,
+  };
 }
 
 export async function listApprovals(): Promise<ApprovalRequest[]> {
