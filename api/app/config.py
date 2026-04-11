@@ -31,6 +31,12 @@ class Settings:
     )
     auto_init_db: bool = _to_bool(os.getenv("STRATIQ_AUTO_INIT_DB"), True)
     auth_mode: str = os.getenv("STRATIQ_AUTH_MODE", "demo").lower()
+    jwt_secret: str = os.getenv(
+        "STRATIQ_JWT_SECRET",
+        "dev-only-stratiq-jwt-secret-min-32-chars!!",
+    )
+    jwt_expire_minutes: int = int(os.getenv("STRATIQ_JWT_EXPIRE_MINUTES", "10080"))  # 7 days
+    google_client_id: str | None = os.getenv("STRATIQ_GOOGLE_CLIENT_ID")
     llm_mode: str = os.getenv("STRATIQ_LLM_MODE", "deterministic").lower()
     llm_timeout_seconds: int = int(os.getenv("STRATIQ_LLM_TIMEOUT_SECONDS", "20"))
     llm_max_tokens: int = int(os.getenv("STRATIQ_LLM_MAX_TOKENS", "900"))

@@ -23,9 +23,6 @@ const pause = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 
 const defaultRequestTimeoutMs = 8_000;
 const askRequestTimeoutMs = 60_000;
-const envDemoRole = process.env.NEXT_PUBLIC_STRATIQ_DEMO_ROLE ?? "executive";
-const envDemoUserId = process.env.NEXT_PUBLIC_STRATIQ_DEMO_USER_ID ?? "demo-exec";
-const envDemoUserName = process.env.NEXT_PUBLIC_STRATIQ_DEMO_USER_NAME ?? "Demo Executive";
 
 let hasWarnedAboutFallback = false;
 const customerSummaryCache = new Map<string, CustomerRiskSummary>();
@@ -37,10 +34,10 @@ export function getApiBaseUrl() {
 const ROLE_STORAGE_KEY = "stratiq-demo-role";
 const USER_ID_STORAGE_KEY = "stratiq-demo-user-id";
 const USER_NAME_STORAGE_KEY = "stratiq-demo-user-name";
+const ACCESS_TOKEN_KEY = "stratiq-access-token";
 const LAST_CUSTOMER_KEY = "stratiq-last-customer-id";
 const ACTOR_CHANGED_EVENT = "stratiq:actor-changed";
 const CUSTOMER_CHANGED_EVENT = "stratiq:customer-changed";
-const DEMO_SESSION_KEY = "stratiq-demo-session";
 const SESSION_CHANGED_EVENT = "stratiq:session-changed";
 
 export type RuntimeActor = {
@@ -50,7 +47,8 @@ export type RuntimeActor = {
 };
 export type DemoUser = RuntimeActor & { email: string };
 
-const DEMO_USERS: DemoUser[] = [
+/** Pre-seeded accounts (password in README: StratIQ-demo-2026). */
+export const SEEDED_DEMO_ACCOUNTS: DemoUser[] = [
   { email: "exec@stratiq.demo", userId: "demo-exec", userName: "Demo Executive", role: "executive" },
   { email: "approver@stratiq.demo", userId: "demo-approver", userName: "Demo Approver", role: "approver" },
   { email: "analyst@stratiq.demo", userId: "demo-analyst", userName: "Demo Analyst", role: "analyst" },
@@ -68,12 +66,16 @@ export class ApiError extends Error {
 
 export function getRuntimeActor(): RuntimeActor {
   if (typeof window === "undefined") {
-    return { role: envDemoRole, userId: envDemoUserId, userName: envDemoUserName };
+    return { role: "", userId: "", userName: "" };
+  }
+  const role = window.localStorage.getItem(ROLE_STORAGE_KEY);
+  if (!role) {
+    return { role: "", userId: "", userName: "" };
   }
   return {
-    role: window.localStorage.getItem(ROLE_STORAGE_KEY) ?? envDemoRole,
-    userId: window.localStorage.getItem(USER_ID_STORAGE_KEY) ?? envDemoUserId,
-    userName: window.localStorage.getItem(USER_NAME_STORAGE_KEY) ?? envDemoUserName,
+    role,
+    userId: window.localStorage.getItem(USER_ID_STORAGE_KEY) ?? "",
+    userName: window.localStorage.getItem(USER_NAME_STORAGE_KEY) ?? "",
   };
 }
 
@@ -84,7 +86,6 @@ export function setRuntimeActor(actor: RuntimeActor) {
   window.localStorage.setItem(ROLE_STORAGE_KEY, actor.role);
   window.localStorage.setItem(USER_ID_STORAGE_KEY, actor.userId);
   window.localStorage.setItem(USER_NAME_STORAGE_KEY, actor.userName);
-  window.localStorage.setItem(DEMO_SESSION_KEY, "active");
   window.dispatchEvent(new Event(ACTOR_CHANGED_EVENT));
   window.dispatchEvent(new Event(SESSION_CHANGED_EVENT));
 }
@@ -96,37 +97,160 @@ export function clearRuntimeActorOverride() {
   window.localStorage.removeItem(ROLE_STORAGE_KEY);
   window.localStorage.removeItem(USER_ID_STORAGE_KEY);
   window.localStorage.removeItem(USER_NAME_STORAGE_KEY);
-  window.localStorage.removeItem(DEMO_SESSION_KEY);
   window.dispatchEvent(new Event(ACTOR_CHANGED_EVENT));
   window.dispatchEvent(new Event(SESSION_CHANGED_EVENT));
 }
 
-export function getDemoUsers(): DemoUser[] {
-  return DEMO_USERS;
-}
-
-export function loginAsDemoUser(email: string): boolean {
-  const selected = DEMO_USERS.find((user) => user.email === email);
-  if (!selected) {
-    return false;
+export function getAccessToken(): string | null {
+  if (typeof window === "undefined") {
+    return null;
   }
-  setRuntimeActor(selected);
-  return true;
+  return window.localStorage.getItem(ACCESS_TOKEN_KEY);
 }
 
-export function hasDemoSession(): boolean {
+export function setAccessToken(token: string | null) {
+  if (typeof window === "undefined") {
+    return;
+  }
+  if (token) {
+    window.localStorage.setItem(ACCESS_TOKEN_KEY, token);
+  } else {
+    window.localStorage.removeItem(ACCESS_TOKEN_KEY);
+  }
+  window.dispatchEvent(new Event(SESSION_CHANGED_EVENT));
+}
+
+export function applyAuthSession(token: string, user: { id: string; name: string; role: string }) {
+  setAccessToken(token);
+  setRuntimeActor({ userId: user.id, userName: user.name, role: user.role });
+}
+
+export function logout() {
+  setAccessToken(null);
+  clearRuntimeActorOverride();
+}
+
+export type AuthUser = { id: string; email: string; name: string; role: string };
+export type UserRole = "executive" | "approver" | "analyst" | "admin" | "viewer";
+
+export type AuthTokenResponse = {
+  accessToken: string;
+  tokenType: string;
+  user: AuthUser;
+};
+
+export type UserRoleUpdateResponse = {
+  user: AuthUser;
+};
+
+export async function loginWithPassword(email: string, password: string): Promise<AuthTokenResponse> {
+  const response = await fetch(`${getApiBaseUrl()}/api/auth/login`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ email, password }),
+    cache: "no-store",
+  });
+  if (!response.ok) {
+    let detail = `HTTP ${response.status}`;
+    try {
+      const body = (await response.json()) as { detail?: string };
+      if (body.detail) {
+        detail = body.detail;
+      }
+    } catch {
+      // ignore
+    }
+    throw new ApiError(response.status, detail);
+  }
+  return (await response.json()) as AuthTokenResponse;
+}
+
+export async function registerAccount(
+  email: string,
+  password: string,
+  name: string,
+): Promise<AuthTokenResponse> {
+  const response = await fetch(`${getApiBaseUrl()}/api/auth/register`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ email, password, name }),
+    cache: "no-store",
+  });
+  if (!response.ok) {
+    let detail = `HTTP ${response.status}`;
+    try {
+      const body = (await response.json()) as { detail?: string };
+      if (body.detail) {
+        detail = body.detail;
+      }
+    } catch {
+      // ignore
+    }
+    throw new ApiError(response.status, detail);
+  }
+  return (await response.json()) as AuthTokenResponse;
+}
+
+export async function loginWithGoogleCredential(credential: string): Promise<AuthTokenResponse> {
+  const response = await fetch(`${getApiBaseUrl()}/api/auth/google`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ credential }),
+    cache: "no-store",
+  });
+  if (!response.ok) {
+    let detail = `HTTP ${response.status}`;
+    try {
+      const body = (await response.json()) as { detail?: string };
+      if (body.detail) {
+        detail = body.detail;
+      }
+    } catch {
+      // ignore
+    }
+    throw new ApiError(response.status, detail);
+  }
+  return (await response.json()) as AuthTokenResponse;
+}
+
+export async function listUsers(): Promise<AuthUser[]> {
+  const response = await fetchFromApi<AuthUser[]>("/api/auth/users", { throwOnHttpError: true });
+  if (!response) {
+    throw new Error("No response from user list endpoint.");
+  }
+  return response;
+}
+
+export async function updateUserRole(userId: string, role: UserRole): Promise<AuthUser> {
+  const response = await fetchFromApi<UserRoleUpdateResponse>(`/api/auth/users/${encodeURIComponent(userId)}/role`, {
+    method: "PATCH",
+    body: JSON.stringify({ role }),
+    throwOnHttpError: true,
+  });
+  if (!response) {
+    throw new Error("No response from user role update endpoint.");
+  }
+  return response.user;
+}
+
+export function hasAuthSession(): boolean {
   if (typeof window === "undefined") {
     return false;
   }
-  return window.localStorage.getItem(DEMO_SESSION_KEY) === "active";
+  return Boolean(window.localStorage.getItem(ACCESS_TOKEN_KEY));
 }
 
-export function subscribeDemoSession(listener: () => void): () => void {
+/** @deprecated Use hasAuthSession */
+export function hasDemoSession(): boolean {
+  return hasAuthSession();
+}
+
+export function subscribeAuthSession(listener: () => void): () => void {
   if (typeof window === "undefined") {
     return () => {};
   }
   const onStorage = (event: StorageEvent) => {
-    if (!event.key || event.key === DEMO_SESSION_KEY) {
+    if (!event.key || event.key === ACCESS_TOKEN_KEY) {
       listener();
     }
   };
@@ -137,6 +261,9 @@ export function subscribeDemoSession(listener: () => void): () => void {
     window.removeEventListener(SESSION_CHANGED_EVENT, listener);
   };
 }
+
+/** @deprecated Use subscribeAuthSession */
+export const subscribeDemoSession = subscribeAuthSession;
 
 export function subscribeRuntimeActor(listener: () => void): () => void {
   if (typeof window === "undefined") {
@@ -201,17 +328,23 @@ async function fetchFromApi<T>(path: string, init?: ApiRequestInit): Promise<T |
 
   const { timeoutMs, throwOnHttpError, ...fetchInit } = init ?? {};
   const actor = getRuntimeActor();
+  const token = getAccessToken();
+  const headers: Record<string, string> = {
+    "Content-Type": "application/json",
+    ...(fetchInit.headers as Record<string, string> | undefined),
+  };
+  if (token) {
+    headers.Authorization = `Bearer ${token}`;
+  } else if (actor.role && actor.userId && actor.userName) {
+    headers["X-StratIQ-Role"] = actor.role;
+    headers["X-StratIQ-User-ID"] = actor.userId;
+    headers["X-StratIQ-User-Name"] = actor.userName;
+  }
 
   try {
     const response = await fetch(`${getApiBaseUrl()}${path}`, {
       ...fetchInit,
-      headers: {
-        "Content-Type": "application/json",
-        "X-StratIQ-Role": actor.role,
-        "X-StratIQ-User-ID": actor.userId,
-        "X-StratIQ-User-Name": actor.userName,
-        ...(fetchInit.headers ?? {}),
-      },
+      headers,
       cache: "no-store",
       signal: controller.signal,
     });

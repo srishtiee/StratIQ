@@ -1,7 +1,7 @@
 import type { Metadata } from "next";
 import type { CSSProperties } from "react";
+import { AppShell } from "@/components/app-shell";
 import { AuthGate } from "@/components/auth-gate";
-import { TopNav } from "@/components/top-nav";
 import "./globals.css";
 
 export const metadata: Metadata = {
@@ -26,10 +26,7 @@ export default function RootLayout({
     >
       <body>
         <AuthGate>
-          <div className="app-shell">
-            <TopNav />
-            <main className="app-content">{children}</main>
-          </div>
+          <AppShell>{children}</AppShell>
         </AuthGate>
       </body>
     </html>

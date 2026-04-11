@@ -201,5 +201,41 @@ class RecordFeedbackResponse(BaseModel):
     recordedAt: str
 
 
+class AuthUserPublic(BaseModel):
+    id: str
+    email: str
+    name: str
+    role: str
+
+
+class AuthTokenResponse(BaseModel):
+    accessToken: str
+    tokenType: Literal["bearer"] = "bearer"
+    user: AuthUserPublic
+
+
+class AuthRegisterRequest(BaseModel):
+    email: str
+    password: str
+    name: str = ""
+
+
+class AuthLoginRequest(BaseModel):
+    email: str
+    password: str
+
+
+class GoogleSignInRequest(BaseModel):
+    credential: str
+
+
+class UserRoleUpdateRequest(BaseModel):
+    role: Literal["executive", "approver", "analyst", "admin", "viewer"]
+
+
+class UserRoleUpdateResponse(BaseModel):
+    user: AuthUserPublic
+
+
 class BaseOrmModel(BaseModel):
     model_config = ConfigDict(from_attributes=True)

@@ -2,29 +2,40 @@
 
 import { useEffect, useState } from "react";
 import Link from "next/link";
-import { usePathname } from "next/navigation";
+import { usePathname, useRouter } from "next/navigation";
 import {
   getLastWorkflowCustomerId,
   getRuntimeActor,
-  setRuntimeActor,
+  logout,
   subscribeLastWorkflowCustomer,
   subscribeRuntimeActor,
 } from "@/lib/service";
-const enableRoleSwitcher = process.env.NEXT_PUBLIC_STRATIQ_ENABLE_ROLE_SWITCHER === "true";
-const roles = ["executive", "approver", "analyst", "admin", "viewer"] as const;
 
 export function TopNav() {
   const pathname = usePathname();
-  const [actor, setActor] = useState(() => getRuntimeActor());
+  const router = useRouter();
+  const [ready, setReady] = useState(false);
+  const [actor, setActor] = useState(() => ({ userName: "", role: "" }));
   const [workflowHref, setWorkflowHref] = useState<string>(() => {
     const customerId = getLastWorkflowCustomerId();
     return customerId ? `/workflow?customer=${customerId}` : "/workflow";
   });
 
+  useEffect(() => {
+    queueMicrotask(() => {
+      setActor({
+        userName: getRuntimeActor().userName,
+        role: getRuntimeActor().role,
+      });
+      setReady(true);
+    });
+  }, []);
+
   useEffect(
     () =>
       subscribeRuntimeActor(() => {
-        setActor(getRuntimeActor());
+        const next = getRuntimeActor();
+        setActor({ userName: next.userName, role: next.role });
         const customerId = getLastWorkflowCustomerId();
         setWorkflowHref(customerId ? `/workflow?customer=${customerId}` : "/workflow");
       }),
@@ -44,20 +55,11 @@ export function TopNav() {
     { href: workflowHref, label: "Workflow" },
     { href: "/approvals", label: "Approvals" },
     { href: "/audit", label: "Audit" },
+    ...(actor.role === "admin" ? [{ href: "/admin/users", label: "Users" }] : []),
   ];
 
-  const onRoleChange = (nextRole: string) => {
-    setActor({
-      role: nextRole,
-      userId: `demo-${nextRole}`,
-      userName: `Demo ${nextRole[0].toUpperCase()}${nextRole.slice(1)}`,
-    });
-    setRuntimeActor({
-      role: nextRole,
-      userId: `demo-${nextRole}`,
-      userName: `Demo ${nextRole[0].toUpperCase()}${nextRole.slice(1)}`,
-    });
-  };
+  const displayName = ready ? actor.userName || "Signed in" : "…";
+  const displayRole = ready ? actor.role || "…" : "…";
 
   return (
     <header className="top-nav">
@@ -72,7 +74,8 @@ export function TopNav() {
 
         <nav className="nav-links" aria-label="Primary navigation">
           {links.map((link) => {
-            const isActive = pathname.startsWith(link.href);
+            const base = link.href.split("?")[0] ?? link.href;
+            const isActive = pathname.startsWith(base);
 
             return (
               <Link
@@ -85,46 +88,24 @@ export function TopNav() {
             );
           })}
         </nav>
-        {enableRoleSwitcher ? (
-          <label
-            style={{
-              display: "flex",
-              alignItems: "center",
-              gap: "0.5rem",
-              fontSize: "0.9rem",
-              color: "var(--text-muted)",
-            }}
-          >
-            Role
-            <select
-              value={actor.role}
-              onChange={(event) => onRoleChange(event.target.value)}
-              style={{
-                borderRadius: "999px",
-                border: "1px solid var(--stroke)",
-                padding: "0.35rem 0.75rem",
-                background: "white",
+        <div style={{ display: "grid", justifyItems: "end", gap: "0.2rem" }}>
+          <span className="muted-copy" style={{ fontSize: "0.85rem" }} suppressHydrationWarning>
+            {displayName} ({displayRole})
+          </span>
+          <div className="button-row button-row--compact">
+            <button
+              type="button"
+              className="button-secondary"
+              style={{ padding: "0.45rem 0.8rem" }}
+              onClick={() => {
+                logout();
+                router.replace("/login");
               }}
             >
-              {roles.map((item) => (
-                <option key={item} value={item}>
-                  {item}
-                </option>
-              ))}
-            </select>
-          </label>
-        ) : (
-          <div style={{ display: "grid", justifyItems: "end", gap: "0.2rem" }}>
-            <span className="muted-copy" style={{ fontSize: "0.85rem" }}>
-              {actor.userName} ({actor.role})
-            </span>
-            <div className="button-row button-row--compact">
-              <Link className="button-secondary" href="/login" style={{ padding: "0.45rem 0.8rem" }}>
-                Switch user
-              </Link>
-            </div>
+              Log out
+            </button>
           </div>
-        )}
+        </div>
       </div>
     </header>
   );

@@ -8,6 +8,7 @@ from sqlalchemy import text
 from sqlalchemy.orm import Session
 
 from .auth import Actor, require_roles
+from .auth_routes import router as auth_router
 from .config import settings
 from .database import Base, SessionLocal, engine, get_db
 from .logging_config import logger
@@ -25,6 +26,7 @@ from .schemas import (
     WorkflowRequest,
     WorkflowResponse,
 )
+from .schema_patches import apply_schema_patches
 from .seed_data import seed_database
 from .services.approval_service import list_approvals, transition_approval
 from .services.audit_service import list_audit_records
@@ -39,6 +41,8 @@ def bootstrap_database() -> None:
         return
     Base.metadata.create_all(bind=engine)
     with SessionLocal() as session:
+        apply_schema_patches(session)
+        session.commit()
         seed_database(session)
         session.execute(text("UPDATE approvals SET status = lower(status)"))
         session.execute(text("UPDATE approvals SET status = 'approved' WHERE status = 'ready'"))
@@ -62,6 +66,8 @@ app = FastAPI(
     version="0.2.0",
     lifespan=lifespan,
 )
+
+app.include_router(auth_router)
 
 app.add_middleware(
     CORSMiddleware,

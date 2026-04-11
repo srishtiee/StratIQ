@@ -9,17 +9,20 @@ StratIQ is a dashboard-first, AI-assisted executive decision-support prototype. 
   - Dashboard/workflow/approvals/audit/customer detail pages
   - Postgres persistence (Supabase/Postgres-compatible)
   - Request correlation IDs (`X-Request-ID`) across API responses, workflow runs, and audit rows
-  - Prototype RBAC with header auth (`X-StratIQ-User-ID`, `X-StratIQ-User-Name`, `X-StratIQ-Role`)
+  - Prototype RBAC enforced on the API (roles: executive, approver, analyst, admin, viewer)
+  - JWT access tokens (`POST /api/auth/login`, `POST /api/auth/register`, optional `POST /api/auth/google`)
+  - Admin role management (`GET /api/auth/users`, `PATCH /api/auth/users/{user_id}/role`) with `/admin/users` UI
   - Approval/action state transitions with transition audit records
   - Deterministic reasoning default with optional Grok/OpenAI fallback behavior
-  - Demo login screen with pre-registered users mapped to roles (`/login`)
+  - Sign-in UI at `/login` (email/password; optional Google if configured)
 - **Prototype implementation**
   - Audit trail is writable (not immutable/WORM)
-  - Auth is header-based demo mode, not production identity federation
+  - Auth is app-issued JWT plus a **demo** header fallback for local/API tests—not production SSO
   - Evidence retrieval is deterministic keyword + structured lookup; vector path is only schema-ready
 - **Optional / configurable**
   - `STRATIQ_LLM_MODE=grok|openai|deterministic` (default deterministic)
-  - Demo auth (`STRATIQ_AUTH_MODE=demo`) vs strict header mode (`strict`)
+  - `STRATIQ_AUTH_MODE=demo|jwt` — `demo` allows header-based actor for curl/pytest; `jwt` requires `Authorization: Bearer` on protected routes
+  - Google sign-in when `STRATIQ_GOOGLE_CLIENT_ID` (API) and `NEXT_PUBLIC_STRATIQ_GOOGLE_CLIENT_ID` (web) are set
 - **Future-ready**
   - Pgvector-powered semantic retrieval
   - Production-grade SSO/OIDC and hardened policy engine
@@ -56,7 +59,7 @@ docker compose up -d postgres api
 ## Tests
 
 ```bash
-pytest api/tests -q
+PYTHONPATH=. pytest api/tests -q
 npm run lint
 npm run build:web
 ```
@@ -64,20 +67,28 @@ npm run build:web
 ## Key Environment Variables
 
 - `DATABASE_URL=postgresql+psycopg://stratiq:stratiq@localhost:5432/stratiq`
-- `STRATIQ_AUTH_MODE=demo|strict`
+- `STRATIQ_AUTH_MODE=demo|jwt` (default `demo` for local/tests; use `jwt` to require bearer tokens)
+- `STRATIQ_JWT_SECRET` (set a long random secret in any shared/deployed environment)
+- `STRATIQ_GOOGLE_CLIENT_ID` (optional; server-side verification of Google ID tokens)
+- `NEXT_PUBLIC_STRATIQ_GOOGLE_CLIENT_ID` (optional; must match the Google OAuth client used in the browser)
 - `STRATIQ_LLM_MODE=deterministic|grok|openai`
 - `GROK_API_KEY` (optional)
 - `OPENAI_API_KEY` (optional)
-- `NEXT_PUBLIC_STRATIQ_DEMO_ROLE` / `NEXT_PUBLIC_STRATIQ_DEMO_USER_ID` / `NEXT_PUBLIC_STRATIQ_DEMO_USER_NAME`
-- `NEXT_PUBLIC_STRATIQ_ENABLE_ROLE_SWITCHER=true|false` (dev-only testing control; prefer `false` in realistic demos)
 
-Demo users for `/login`:
-- `exec@stratiq.demo` -> executive
-- `approver@stratiq.demo` -> approver
-- `analyst@stratiq.demo` -> analyst
-- `admin@stratiq.demo` -> admin
-- `viewer@stratiq.demo` -> viewer
+### Seeded accounts (API bootstrap)
 
-Routes are login-gated in the frontend demo shell:
+After the API seeds the database, these emails exist with password **`StratIQ-demo-2026`** (bcrypt-hashed in `seed_database`):
+
+- `exec@stratiq.demo` → executive
+- `approver@stratiq.demo` → approver
+- `analyst@stratiq.demo` → analyst
+- `admin@stratiq.demo` → admin
+- `viewer@stratiq.demo` → viewer
+
+Self-serve **registration** defaults new users to the **viewer** role. **Google** sign-in creates a **viewer** account on first login.
+
+### Routes
+
 - `/` redirects to `/login`
-- unauthenticated navigation to app pages redirects to `/login`
+- App pages require a stored JWT (sign in at `/login`); use **Log out** to switch users
+- `/admin/users` is intended for `admin` role accounts

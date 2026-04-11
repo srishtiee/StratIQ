@@ -4,6 +4,7 @@ from uuid import uuid4
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
+from .auth_password import hash_password
 from .models import (
     Action,
     Approval,
@@ -18,6 +19,9 @@ from .models import (
     User,
     WorkflowRun,
 )
+
+# Shared password for seeded accounts (documented in README). Change via DB for production.
+DEMO_LOGIN_PASSWORD = "StratIQ-demo-2026"
 
 
 CUSTOMER_SEED = [
@@ -401,10 +405,20 @@ def _append_demo_history(session: Session) -> None:
 
 
 def seed_database(session: Session) -> None:
+    demo_hash = hash_password(DEMO_LOGIN_PASSWORD)
+    for uid, name, email, role in (
+        ("demo-exec", "Demo Executive", "exec@stratiq.demo", "executive"),
+        ("demo-approver", "Demo Approver", "approver@stratiq.demo", "approver"),
+        ("demo-analyst", "Demo Analyst", "analyst@stratiq.demo", "analyst"),
+        ("demo-admin", "Demo Admin", "admin@stratiq.demo", "admin"),
+        ("demo-viewer", "Demo Viewer", "viewer@stratiq.demo", "viewer"),
+    ):
+        session.merge(User(id=uid, name=name, email=email, role=role, password_hash=demo_hash))
+
     for user in [
-        User(id="user-001", name="Khushi Patel", email="khushi@stratiq.local", role="CXO Product Lead"),
-        User(id="user-002", name="Srishti Bankar", email="srishti@stratiq.local", role="Customer Success Lead"),
-        User(id="user-003", name="Kashish Desai", email="kashish@stratiq.local", role="RevOps Director"),
+        User(id="user-001", name="Khushi Patel", email="khushi@stratiq.local", role="admin", password_hash=demo_hash),
+        User(id="user-002", name="Srishti Bankar", email="srishti@stratiq.local", role="approver", password_hash=demo_hash),
+        User(id="user-003", name="Kashish Desai", email="kashish@stratiq.local", role="analyst", password_hash=demo_hash),
     ]:
         session.merge(user)
 
