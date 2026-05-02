@@ -1,0 +1,40 @@
+version: "3.9"
+
+services:
+  # ── PostgreSQL + pgvector ──────────────────────────────────────────────────
+  db:
+    image: pgvector/pgvector:pg15
+    container_name: stratiq-db
+    environment:
+      POSTGRES_DB: stratiq
+      POSTGRES_USER: stratiq
+      POSTGRES_PASSWORD: stratiq
+    ports:
+      - "5433:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U stratiq"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  # ── FastAPI Backend ────────────────────────────────────────────────────────
+  backend:
+    build:
+      context: ../backend
+      dockerfile: ../docker/Dockerfile.backend
+    container_name: stratiq-backend
+    env_file: ../.env
+    environment:
+      DATABASE_URL: postgresql+asyncpg://stratiq:stratiq@db:5432/stratiq
+    ports:
+      - "8000:8000"
+    depends_on:
+      db:
+        condition: service_healthy
+    volumes:
+      - ../backend/app:/app/app   # hot reload in dev
+
+volumes:
+  pgdata:
