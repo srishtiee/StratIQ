@@ -66,9 +66,33 @@ export default function LoginPage() {
         </form>
 
         <div className="login-footer">
-          <p className="muted-copy">
-            Demo credentials: <strong>kashish</strong> / <strong>password123</strong>
-          </p>
+          <p className="muted-copy" style={{ marginBottom: "0.5rem" }}>Demo accounts — all use <strong>password123</strong></p>
+          <table style={{ width: "100%", fontSize: "0.8rem", borderCollapse: "collapse", textAlign: "left" }}>
+            <thead>
+              <tr style={{ borderBottom: "1px solid rgba(255,255,255,0.1)" }}>
+                <th style={{ padding: "0.25rem 0.5rem", color: "var(--text-muted)" }}>Username</th>
+                <th style={{ padding: "0.25rem 0.5rem", color: "var(--text-muted)" }}>Role</th>
+                <th style={{ padding: "0.25rem 0.5rem", color: "var(--text-muted)" }}>Access</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr>
+                <td style={{ padding: "0.25rem 0.5rem" }}><strong>admin</strong></td>
+                <td style={{ padding: "0.25rem 0.5rem" }}>Admin</td>
+                <td style={{ padding: "0.25rem 0.5rem" }}>Full access + approve/execute</td>
+              </tr>
+              <tr>
+                <td style={{ padding: "0.25rem 0.5rem" }}><strong>analyst</strong></td>
+                <td style={{ padding: "0.25rem 0.5rem" }}>Analyst</td>
+                <td style={{ padding: "0.25rem 0.5rem" }}>Workflow + approvals (view only)</td>
+              </tr>
+              <tr>
+                <td style={{ padding: "0.25rem 0.5rem" }}><strong>viewer</strong></td>
+                <td style={{ padding: "0.25rem 0.5rem" }}>Viewer</td>
+                <td style={{ padding: "0.25rem 0.5rem" }}>Dashboard only</td>
+              </tr>
+            </tbody>
+          </table>
         </div>
       </div>
 

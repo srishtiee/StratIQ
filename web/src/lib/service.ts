@@ -287,30 +287,22 @@ export async function submitFeedback(payload: FeedbackPayload) {
 }
 
 export async function executeAction(payload: ApprovalActionPayload): Promise<ActionResult> {
-  const apiAction = await fetchFromApi<ActionResult>("/api/action", {
+  const token = await getToken();
+  const response = await fetch(`${getApiBaseUrl()}/api/action`, {
     method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      ...(token ? { Authorization: `Bearer ${token}` } : {}),
+    },
     body: JSON.stringify(payload),
   });
-  if (apiAction) {
-    return apiAction;
+
+  if (!response.ok) {
+    const error = await response.json().catch(() => ({ detail: "Action failed" }));
+    throw new Error(error.detail ?? `HTTP ${response.status}`);
   }
 
-  await pause(180);
-  return {
-    id: `action-${Date.now()}`,
-    approvalId: payload.approvalId,
-    status:
-      payload.decision === "reject"
-        ? "rejected"
-        : payload.decision === "execute"
-          ? "executed"
-          : payload.decision === "mark_ready"
-            ? "queued"
-            : "approved",
-    summary: "Approval state captured in the fallback action log.",
-    auditNote: "Mock action path recorded a local approval transition for demo continuity.",
-    executedAt: new Date().toISOString(),
-  };
+  return response.json() as Promise<ActionResult>;
 }
 
 export function getMockActionHistory() {

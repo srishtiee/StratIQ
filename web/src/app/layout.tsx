@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import type { CSSProperties } from "react";
 import { TopNav } from "@/components/top-nav";
+import { UserProvider } from "@/lib/user-context";
 import "./globals.css";
 
 export const metadata: Metadata = {
@@ -24,10 +25,12 @@ export default function RootLayout({
       }
     >
       <body>
-        <div className="app-shell">
-          <TopNav />
-          <main className="app-content">{children}</main>
-        </div>
+        <UserProvider>
+          <div className="app-shell">
+            <TopNav />
+            <main className="app-content">{children}</main>
+          </div>
+        </UserProvider>
       </body>
     </html>
   );

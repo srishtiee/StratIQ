@@ -21,7 +21,7 @@ from .models import (
     UsageMetric,
     WorkflowRun,
 )
-from .reasoning import analyst_stage, arbiter_stage, comms_summary, planner_stage, researcher_stage, risk_stage
+from .reasoning import adversary_stage, analyst_stage, arbiter_stage, comms_summary, planner_stage, researcher_stage, risk_stage
 from .schemas import (
     ActionResult,
     ApprovalActionPayload,
@@ -356,11 +356,18 @@ def get_dashboard_insights(session: Session) -> DashboardInsights:
     highlights.append(f"{open_approvals} approval-ready interventions are waiting for operating review.")
     highlights.append("The bounded pipeline keeps evidence, critique, and final judgment visible before execution.")
 
+    critical_revenue = sum(
+        c.monthly_revenue * 3
+        for c in customer_rows
+        if c.risk_level == "Critical"
+    )
+
     return DashboardInsights(
         portfolioAtRisk=len(critical_accounts),
         renewalWindow=sum(1 for summary in summaries if summary.riskLevel in {"Critical", "High"}),
         executiveConfidence="78%",
         actionQueue=open_approvals,
+        criticalRevenue=critical_revenue,
         riskMix=risk_mix,
         highlights=highlights,
     )
@@ -603,6 +610,7 @@ def _workflow_response_from_run(
             concerns=decision.risk_concerns,
             requiredChecks=decision.risk_required_checks,
         ),
+        adversaryCritique=None,
         arbiterDecision=ArbiterDecision(
             selectedStrategyId=decision.arbiter_strategy_id,
             finalRecommendation=decision.arbiter_final_recommendation,
@@ -686,17 +694,22 @@ def stream_bounded_workflow(session: Session, request: WorkflowRequest):
             yield format_thought("Risk/Compliance Agent", "Validating against hard constraints (escalation load, adoption floor).")
             time.sleep(0.4)
             
+        yield format_event("stage", {"agent": "Adversary Agent", "message": "Stress-testing the proposed strategy..."})
+        adversary = adversary_stage(customer, analyst, planner)
+        yield format_thought("Adversary Agent", f"Adversarial verdict: {adversary.adversarial_verdict}. {adversary.strategic_flaws[0]}")
+        time.sleep(0.3)
+
         yield format_event("stage", {"agent": "Arbiter Agent", "message": "Evaluating debate and finalizing recommendation..."})
-        arbiter = arbiter_stage(customer, planner, risk_review)
+        arbiter = arbiter_stage(customer, planner, risk_review, adversary)
         yield format_thought("Arbiter Agent", f"Finalizing path: '{arbiter.finalRecommendation[:40]}...' with {arbiter.confidenceLabel.lower()}.")
         time.sleep(0.4)
-        
+
         yield format_event("stage", {"agent": "Comms Agent", "message": "Drafting executive summary..."})
         summary = comms_summary(customer, analyst, arbiter)
         summary = asyncio.run(_maybe_llm_summary(customer, summary, arbiter))
         yield format_thought("Comms Agent", "Optimizing summary for executive consumption and audit clarity.")
         time.sleep(0.3)
-        
+
         # Save to DB
         yield format_event("stage", {"agent": "Orchestrator", "message": "Saving workflow package to audit log..."})
         run_id = f"run-{uuid4().hex[:10]}"
@@ -801,12 +814,13 @@ def stream_bounded_workflow(session: Session, request: WorkflowRequest):
             evidence=evidence,
             plannerOutput=planner,
             riskReview=risk_review,
+            adversaryCritique=adversary,
             arbiterDecision=arbiter,
             approval=_approval_from_db(approval, customer),
             actionHistory=action_history,
             auditRecords=audit,
         )
-        
+
         yield format_event("complete", {"result": result.model_dump(mode='json')})
         
     except Exception as exc:
@@ -856,7 +870,8 @@ def run_bounded_workflow(session: Session, request: WorkflowRequest) -> Workflow
             if risk_review.verdict == "pass":
                 break
 
-    arbiter = arbiter_stage(customer, planner, risk_review)
+    adversary = adversary_stage(customer, analyst, planner)
+    arbiter = arbiter_stage(customer, planner, risk_review, adversary)
     summary = comms_summary(customer, analyst, arbiter)
     summary = asyncio.run(_maybe_llm_summary(customer, summary, arbiter))
 
@@ -962,6 +977,7 @@ def run_bounded_workflow(session: Session, request: WorkflowRequest) -> Workflow
         evidence=evidence,
         plannerOutput=planner,
         riskReview=risk_review,
+        adversaryCritique=adversary,
         arbiterDecision=arbiter,
         approval=_approval_from_db(approval, customer),
         actionHistory=action_history,

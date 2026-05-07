@@ -82,6 +82,8 @@ const riskReview: RiskReview = {
     "Confirm executive sponsor availability within 24 hours.",
     "Tie any save package to a documented remediation milestone.",
   ],
+  quantitative_score: 82,
+  qualitative_score: 65,
 };
 
 const arbiterDecision: ArbiterDecision = {
@@ -180,6 +182,7 @@ export const dashboardInsights: DashboardInsights = {
   renewalWindow: 6,
   executiveConfidence: "78%",
   actionQueue: approvals.filter((approval) => approval.status !== "Executed").length,
+  criticalRevenue: 726000,
   riskMix: [
     { label: "Critical", count: 4, accent: "#c45c56" },
     { label: "High", count: 8, accent: "#c9852a" },

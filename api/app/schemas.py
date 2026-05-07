@@ -66,6 +66,14 @@ class RiskReview(BaseModel):
     qualitative_score: float = 0.0
 
 
+class AdversaryCritique(BaseModel):
+    agent: Literal["Adversary Agent"] = "Adversary Agent"
+    adversarial_verdict: Literal["weak", "moderate", "robust"]
+    strategic_flaws: list[str]
+    optimistic_assumptions: list[str]
+    counter_proposal_summary: str
+
+
 class ArbiterDecision(BaseModel):
     agent: Literal["Arbiter Agent"] = "Arbiter Agent"
     selectedStrategyId: str
@@ -151,6 +159,7 @@ class WorkflowResponse(BaseModel):
     evidence: list[EvidenceItem]
     plannerOutput: PlannerOutput
     riskReview: RiskReview
+    adversaryCritique: AdversaryCritique | None = None
     arbiterDecision: ArbiterDecision
     approval: ApprovalRequest
     actionHistory: list[ActionResult]
@@ -185,6 +194,7 @@ class DashboardInsights(BaseModel):
     renewalWindow: int
     executiveConfidence: str
     actionQueue: int
+    criticalRevenue: float
     riskMix: list[dict]
     highlights: list[str]
 

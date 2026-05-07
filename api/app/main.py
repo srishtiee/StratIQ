@@ -34,6 +34,7 @@ from .auth import (
     ACCESS_TOKEN_EXPIRE_MINUTES,
     create_access_token,
     get_current_user,
+    require_role,
     verify_password,
 )
 from .models import User
@@ -108,7 +109,8 @@ async def login(
     
     access_token_expires = timedelta(minutes=ACCESS_TOKEN_EXPIRE_MINUTES)
     access_token = create_access_token(
-        data={"sub": user.username}, expires_delta=access_token_expires
+        data={"sub": user.username, "role": user.role, "name": user.name, "email": user.email},
+        expires_delta=access_token_expires,
     )
     return {"access_token": access_token, "token_type": "bearer"}
 
@@ -148,9 +150,9 @@ def customer_detail(
 
 @app.post("/api/ask", response_model=WorkflowResponse)
 def ask(
-    payload: WorkflowRequest, 
+    payload: WorkflowRequest,
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user)
+    current_user: User = Depends(require_role("approver", "admin")),
 ) -> WorkflowResponse:
     try:
         return run_bounded_workflow(db, payload)
@@ -160,14 +162,14 @@ def ask(
 
 @app.post("/api/ask/stream")
 def ask_stream(
-    payload: WorkflowRequest, 
+    payload: WorkflowRequest,
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user)
+    current_user: User = Depends(require_role("approver", "admin")),
 ):
     from .services import stream_bounded_workflow
     return StreamingResponse(
         stream_bounded_workflow(db, payload),
-        media_type="text/event-stream"
+        media_type="text/event-stream",
     )
 
 @app.get("/api/workflows", response_model=list[WorkflowRunSummary])
@@ -194,9 +196,9 @@ def latest_workflow(
 
 @app.post("/api/action", response_model=ActionResult)
 def action(
-    payload: ApprovalActionPayload, 
+    payload: ApprovalActionPayload,
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user)
+    current_user: User = Depends(require_role("admin")),
 ) -> ActionResult:
     try:
         return apply_action(db, payload)
@@ -206,9 +208,9 @@ def action(
 
 @app.post("/api/feedback", response_model=RecordFeedbackResponse)
 def feedback(
-    payload: FeedbackPayload, 
+    payload: FeedbackPayload,
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user)
+    current_user: User = Depends(require_role("approver", "admin")),
 ) -> RecordFeedbackResponse:
     try:
         return record_feedback(db, payload)
@@ -221,7 +223,7 @@ def approvals(
     page: int = 1,
     page_size: int = 10,
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user)
+    current_user: User = Depends(require_role("approver", "admin")),
 ) -> PaginatedResponse[ApprovalRequest]:
     return list_approvals(db, page, page_size)
 
@@ -231,6 +233,6 @@ def audit(
     page: int = 1,
     page_size: int = 25,
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user)
+    current_user: User = Depends(require_role("approver", "admin")),
 ) -> PaginatedResponse[AuditRecord]:
     return list_audit_records(db, page, page_size)

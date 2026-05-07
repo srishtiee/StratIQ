@@ -29,6 +29,7 @@ class Token(BaseModel):
 
 class TokenData(BaseModel):
     username: str | None = None
+    role: str | None = None
 
 
 def verify_password(plain_password, hashed_password):
@@ -63,11 +64,23 @@ async def get_current_user(
         username: str = payload.get("sub")
         if username is None:
             raise credentials_exception
-        token_data = TokenData(username=username)
+        token_data = TokenData(username=username, role=payload.get("role"))
     except JWTError:
         raise credentials_exception
-    
+
     user = db.query(User).filter(User.username == token_data.username).first()
     if user is None:
         raise credentials_exception
     return user
+
+
+def require_role(*allowed_roles: str):
+    """FastAPI dependency that gates an endpoint to specific roles."""
+    async def check(current_user: Annotated[User, Depends(get_current_user)]):
+        if current_user.role not in allowed_roles:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail=f"Role '{current_user.role}' is not permitted for this action.",
+            )
+        return current_user
+    return check

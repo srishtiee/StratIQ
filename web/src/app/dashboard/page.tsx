@@ -67,13 +67,13 @@ export default async function DashboardPage() {
       <section className="kpi-grid">
         <KpiCard
           label="Retention actions ready"
-          value="04"
+          value={String(insights.actionQueue).padStart(2, "0")}
           note="Governed actions packaged for review inside an enterprise approval flow."
         />
         <KpiCard
           label="Critical revenue exposure"
-          value="$372k"
-          note="High-value enterprise exposure surfaced with revenue-aware prioritization."
+          value={`$${Math.round(insights.criticalRevenue / 1000)}k`}
+          note="3-month revenue at risk for critical accounts, surfaced with revenue-aware prioritization."
         />
         <KpiCard
           label="Signal coverage"

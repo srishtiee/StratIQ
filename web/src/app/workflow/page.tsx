@@ -4,6 +4,7 @@ import { useEffect, useState, useTransition } from "react";
 import { useSearchParams } from "next/navigation";
 import type {
   ActionResult,
+  AdversaryCritique,
   ApprovalStatus,
   WorkflowResponse, WorkflowRunSummary,
 } from "@shared/contracts";
@@ -14,6 +15,7 @@ import { StatePanel } from "@/components/state-panel";
 import { ReasoningTrace } from "@/components/reasoning-trace";
 import { DualRiskEngine } from "@/components/risk-dial";
 import { executeAction, getCustomerById, getLatestWorkflow, listWorkflows, streamAsk, submitAsk, submitFeedback } from "@/lib/service";
+import { useHasRole } from "@/lib/user-context";
 
 function makeDefaultPrompt(customerName?: string) {
   const subject = customerName ?? "the selected customer";
@@ -23,18 +25,21 @@ function makeDefaultPrompt(customerName?: string) {
 export default function WorkflowPage() {
   const searchParams = useSearchParams();
   const customerId = searchParams.get("customer");
+
   const [prompt, setPrompt] = useState(() => makeDefaultPrompt());
   const [workflow, setWorkflow] = useState<WorkflowResponse | null>(null);
   const [result, setResult] = useState<ActionResult | null>(null);
   const [feedbackNote, setFeedbackNote] = useState("");
   const [lastFeedback, setLastFeedback] = useState<string | null>(null);
-  const [activePanel, setActivePanel] = useState<"overview" | "strategy" | "risk" | "evidence" | "audit">(
+  const [activePanel, setActivePanel] = useState<"overview" | "strategy" | "risk" | "adversary" | "evidence" | "audit">(
     "overview",
   );
   const [isPromptExpanded, setIsPromptExpanded] = useState(true);
   const [streamEvents, setStreamEvents] = useState<{type: "stage" | "thought", agent: string, message: string}[]>([]);
   const [history, setHistory] = useState<WorkflowRunSummary[]>([]);
   const [isPending, startTransition] = useTransition();
+  const [actionError, setActionError] = useState<string | null>(null);
+  const canAct = useHasRole("admin");
 
   useEffect(() => {
     let active = true;
@@ -77,40 +82,45 @@ export default function WorkflowPage() {
       return;
     }
 
+    setActionError(null);
     startTransition(async () => {
-      const action = await executeAction({
-        approvalId: workflow.approval.id,
-        decision,
-      });
-      setResult(action);
+      try {
+        const action = await executeAction({
+          approvalId: workflow.approval.id,
+          decision,
+        });
+        setResult(action);
 
-      const statusMap: Record<typeof decision, ApprovalStatus> = {
-        approve: "Approved",
-        mark_ready: "Ready",
-        reject: "Rejected",
-        execute: "Executed",
-      };
+        const statusMap: Record<typeof decision, ApprovalStatus> = {
+          approve: "Approved",
+          mark_ready: "Ready",
+          reject: "Rejected",
+          execute: "Executed",
+        };
 
-      setWorkflow({
-        ...workflow,
-        approval: {
-          ...workflow.approval,
-          status: statusMap[decision],
-        },
-        actionHistory: [action, ...workflow.actionHistory],
-        auditRecords: [
-          {
-            id: `audit-local-${Date.now()}`,
-            runId: workflow.requestId,
-            approvalId: workflow.approval.id,
-            eventType: decision === "execute" ? "action" : "approval",
-            actor: "Operator",
-            message: action.summary,
-            createdAt: action.executedAt ?? new Date().toISOString(),
+        setWorkflow({
+          ...workflow,
+          approval: {
+            ...workflow.approval,
+            status: statusMap[decision],
           },
-          ...workflow.auditRecords,
-        ],
-      });
+          actionHistory: [action, ...workflow.actionHistory],
+          auditRecords: [
+            {
+              id: `audit-local-${Date.now()}`,
+              runId: workflow.requestId,
+              approvalId: workflow.approval.id,
+              eventType: decision === "execute" ? "action" : "approval",
+              actor: "Operator",
+              message: action.summary,
+              createdAt: action.executedAt ?? new Date().toISOString(),
+            },
+            ...workflow.auditRecords,
+          ],
+        });
+      } catch (err) {
+        setActionError(err instanceof Error ? err.message : "Action failed");
+      }
     });
   };
 
@@ -321,6 +331,15 @@ export default function WorkflowPage() {
                   >
                     Critique
                   </button>
+                  {workflow.adversaryCritique && (
+                    <button
+                      className={`workflow-tab${activePanel === "adversary" ? " is-active" : ""}`}
+                      type="button"
+                      onClick={() => setActivePanel("adversary")}
+                    >
+                      Adversary
+                    </button>
+                  )}
                   <button
                     className={`workflow-tab${activePanel === "evidence" ? " is-active" : ""}`}
                     type="button"
@@ -416,6 +435,10 @@ export default function WorkflowPage() {
                   </div>
                 ) : null}
 
+                {activePanel === "adversary" && workflow.adversaryCritique ? (
+                  <AdversaryPanel critique={workflow.adversaryCritique} />
+                ) : null}
+
                 {activePanel === "evidence" ? <EvidencePanel evidence={workflow.evidence} /> : null}
 
                 {activePanel === "audit" ? (
@@ -481,20 +504,29 @@ export default function WorkflowPage() {
           {workflow ? (
             <>
               <ActionCard approval={workflow.approval} result={result} className="approval-card--workflow">
-                <div className="button-row">
-                  <button className="button-secondary" type="button" onClick={() => handleAction("mark_ready")}>
-                    Mark ready
-                  </button>
-                  <button className="button-secondary" type="button" onClick={() => handleAction("reject")}>
-                    Reject
-                  </button>
-                  <button className="button-primary" type="button" onClick={() => handleAction("approve")}>
-                    Approve
-                  </button>
-                  <button className="button-primary" type="button" onClick={() => handleAction("execute")}>
-                    Execute log
-                  </button>
-                </div>
+                {actionError && (
+                  <p style={{ fontSize: "0.8rem", color: "#ef4444", marginBottom: "0.5rem" }}>{actionError}</p>
+                )}
+                {canAct ? (
+                  <div className="button-row">
+                    <button className="button-secondary" type="button" onClick={() => handleAction("mark_ready")} disabled={isPending}>
+                      Mark ready
+                    </button>
+                    <button className="button-secondary" type="button" onClick={() => handleAction("reject")} disabled={isPending}>
+                      Reject
+                    </button>
+                    <button className="button-primary" type="button" onClick={() => handleAction("approve")} disabled={isPending}>
+                      Approve
+                    </button>
+                    <button className="button-primary" type="button" onClick={() => handleAction("execute")} disabled={isPending}>
+                      Execute log
+                    </button>
+                  </div>
+                ) : (
+                  <p className="muted-copy" style={{ fontSize: "0.8rem", marginTop: "0.5rem" }}>
+                    View only — approval actions require admin role.
+                  </p>
+                )}
               </ActionCard>
               <div className="workflow-side-notes">
                 <div className="button-row button-row--compact">
@@ -517,6 +549,45 @@ export default function WorkflowPage() {
         </LaneSection>
       </div>
     </div>
+  );
+}
+
+function AdversaryPanel({ critique }: { critique: AdversaryCritique }) {
+  const verdictColor =
+    critique.adversarial_verdict === "weak"
+      ? "#ef4444"
+      : critique.adversarial_verdict === "moderate"
+        ? "#c9852a"
+        : "#3d8a62";
+
+  return (
+    <article className="agent-item">
+      <div className="lane-card__title" style={{ marginBottom: "0.5rem" }}>
+        <h3 style={{ fontSize: "1rem" }}>{critique.agent}</h3>
+        <span className="eyebrow" style={{ color: verdictColor, textTransform: "capitalize" }}>
+          {critique.adversarial_verdict} plan
+        </span>
+      </div>
+      <p style={{ marginBottom: "0.8rem" }}>{critique.counter_proposal_summary}</p>
+      {critique.strategic_flaws.length > 0 && (
+        <div className="driver-list" style={{ marginBottom: "0.8rem" }}>
+          {critique.strategic_flaws.map((flaw) => (
+            <div key={flaw} className="driver-item" style={{ borderLeft: "2px solid #ef4444" }}>
+              {flaw}
+            </div>
+          ))}
+        </div>
+      )}
+      {critique.optimistic_assumptions.length > 0 && (
+        <div className="driver-list">
+          {critique.optimistic_assumptions.map((assumption) => (
+            <div key={assumption} className="driver-item" style={{ borderLeft: "2px solid #c9852a" }}>
+              Assumption: {assumption}
+            </div>
+          ))}
+        </div>
+      )}
+    </article>
   );
 }
 

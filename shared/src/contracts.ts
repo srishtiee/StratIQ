@@ -53,6 +53,14 @@ export interface RiskReview {
   qualitative_score: number;
 }
 
+export interface AdversaryCritique {
+  agent: "Adversary Agent";
+  adversarial_verdict: "weak" | "moderate" | "robust";
+  strategic_flaws: string[];
+  optimistic_assumptions: string[];
+  counter_proposal_summary: string;
+}
+
 export interface ArbiterDecision {
   agent: "Arbiter Agent";
   selectedStrategyId: string;
@@ -121,6 +129,7 @@ export interface WorkflowResponse {
   evidence: EvidenceItem[];
   plannerOutput: PlannerOutput;
   riskReview: RiskReview;
+  adversaryCritique?: AdversaryCritique | null;
   arbiterDecision: ArbiterDecision;
   approval: ApprovalRequest;
   actionHistory: ActionResult[];
@@ -155,6 +164,7 @@ export interface DashboardInsights {
   renewalWindow: number;
   executiveConfidence: string;
   actionQueue: number;
+  criticalRevenue: number;
   riskMix: Array<{
     label: RiskLevel;
     count: number;

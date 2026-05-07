@@ -2,7 +2,7 @@ from dataclasses import dataclass
 from datetime import datetime
 
 from .models import Customer, SupportTicket, UsageMetric
-from .schemas import ArbiterDecision, EvidenceItem, PlannerOutput, RiskReview, StrategyOption
+from .schemas import AdversaryCritique, ArbiterDecision, EvidenceItem, PlannerOutput, RiskReview, StrategyOption
 
 
 @dataclass
@@ -163,24 +163,62 @@ def risk_stage(customer: Customer, analysis: AnalystSnapshot, planner: PlannerOu
     )
 
 
-def arbiter_stage(customer: Customer, planner: PlannerOutput, risk_review: RiskReview) -> ArbiterDecision:
+def adversary_stage(customer: Customer, analysis: AnalystSnapshot, planner: PlannerOutput) -> AdversaryCritique:
+    flaws = []
+    assumptions = []
+    verdict = "robust"
+
+    if analysis.usage_change_pct < -15:
+        verdict = "moderate"
+        flaws.append("The plan assumes users will return simply because of a sponsor talk, ignoring product friction.")
+        assumptions.append("Assumes the drop in usage is behavioral rather than a technical blocker.")
+
+    if analysis.open_escalations > 1:
+        verdict = "weak"
+        flaws.append("Proposed commercial save is premature while P1 tickets remain open.")
+        assumptions.append("Assumes the customer will value a 'discount' over a working product.")
+
+    if not flaws:
+        flaws.append("No obvious strategic flaws detected in the proposed recovery paths.")
+    
+    counter_proposal = (
+        "Delay the commercial recovery package until the P1 escalations are formally closed. "
+        "Prioritize technical stabilization over commercial negotiation."
+    ) if verdict == "weak" else "Proceed as planned but add a 30-day product health checkpoint."
+
+    return AdversaryCritique(
+        adversarial_verdict=verdict,
+        strategic_flaws=flaws,
+        optimistic_assumptions=assumptions,
+        counter_proposal_summary=counter_proposal,
+    )
+
+
+def arbiter_stage(customer: Customer, planner: PlannerOutput, risk_review: RiskReview, adversary: AdversaryCritique) -> ArbiterDecision:
     selected = planner.strategies[0]
-    if risk_review.verdict == "block" and len(planner.strategies) > 1:
+    confidence = "High confidence"
+
+    if (risk_review.verdict == "block" or adversary.adversarial_verdict == "weak") and len(planner.strategies) > 1:
         selected = planner.strategies[1]
+        confidence = "Moderate confidence"
+    
+    if adversary.adversarial_verdict == "weak":
+        confidence = "Low confidence - Adversary contested"
 
     rationale = (
         f"{customer.name} needs a recommendation that leadership can defend quickly. "
-        f"The selected path aligns best with the current evidence and preserves execution accountability."
+        f"The selected path aligns best with the current evidence. "
+        f"Adversary verdict: {adversary.adversarial_verdict}."
     )
 
     return ArbiterDecision(
         selectedStrategyId=selected.id,
         finalRecommendation=(
-            f"Approve {selected.title.lower()} first, and keep the alternate strategy available "
-            "only if the next checkpoint exposes commercial resistance."
+            f"Approve {selected.title.lower()} first. Note: The Adversary Agent flagged "
+            f"'{adversary.strategic_flaws[0]}' which we have mitigated in this recommendation."
         ),
         rationale=rationale,
-        confidenceLabel="High confidence" if risk_review.verdict != "block" else "Moderate confidence",
+        confidenceLabel=confidence,
     )
 
 

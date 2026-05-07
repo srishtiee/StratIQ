@@ -240,31 +240,34 @@ def seed_database(session: Session) -> None:
     if existing_customer:
         return
 
+    # Passwords: all three use "password123"
+    # Roles: admin > approver > viewer
+    # Demo: log in as each to see different nav/permissions
     session.add_all(
         [
             User(
                 id="user-001",
-                username="khushi",
+                username="admin",
                 hashed_password="$2b$12$N1LFnkfcHq2SxtPxjpBM6ufY8MuTKDzFPrF/XzdX7xyWS31.gAD3a",
-                name="Khushi Patel",
-                email="khushi@stratiq.local",
-                role="CXO Product Lead",
+                name="Admin User",
+                email="admin@stratiq.local",
+                role="admin",
             ),
             User(
                 id="user-002",
-                username="srishti",
+                username="analyst",
                 hashed_password="$2b$12$N1LFnkfcHq2SxtPxjpBM6ufY8MuTKDzFPrF/XzdX7xyWS31.gAD3a",
-                name="Srishti Bankar",
-                email="srishti@stratiq.local",
-                role="Customer Success Lead",
+                name="Analyst User",
+                email="analyst@stratiq.local",
+                role="approver",
             ),
             User(
                 id="user-003",
-                username="kashish",
+                username="viewer",
                 hashed_password="$2b$12$N1LFnkfcHq2SxtPxjpBM6ufY8MuTKDzFPrF/XzdX7xyWS31.gAD3a",
-                name="Kashish Desai",
-                email="kashish@stratiq.local",
-                role="RevOps Director",
+                name="Viewer User",
+                email="viewer@stratiq.local",
+                role="viewer",
             ),
         ]
     )
