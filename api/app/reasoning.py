@@ -123,6 +123,18 @@ def risk_stage(customer: Customer, analysis: AnalystSnapshot, planner: PlannerOu
     required_checks = []
     verdict = "pass"
 
+    # Quantitative Signal (Data-driven)
+    # Base on churn probability and usage drop
+    quant_score = (customer.churn_probability * 100)
+    if analysis.usage_change_pct < -20:
+        quant_score = min(100, quant_score + 15)
+
+    # Qualitative Signal (Sentiment/Contextual)
+    # Base on ticket escalations and adoption depth
+    qual_score = (analysis.open_escalations * 25)
+    if analysis.adoption_pct < 40:
+        qual_score = min(100, qual_score + 20)
+
     if analysis.open_escalations >= 2:
         verdict = "caution"
         concerns.append("Sponsor trust is at risk because multiple escalations remain unresolved.")
@@ -146,6 +158,8 @@ def risk_stage(customer: Customer, analysis: AnalystSnapshot, planner: PlannerOu
         critique=critique,
         concerns=concerns,
         requiredChecks=required_checks,
+        quantitative_score=round(quant_score, 1),
+        qualitative_score=round(qual_score, 1),
     )
 
 

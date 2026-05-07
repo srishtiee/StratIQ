@@ -49,6 +49,8 @@ export interface RiskReview {
   critique: string;
   concerns: string[];
   requiredChecks: string[];
+  quantitative_score: number;
+  qualitative_score: number;
 }
 
 export interface ArbiterDecision {

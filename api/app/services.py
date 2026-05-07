@@ -633,53 +633,69 @@ def stream_bounded_workflow(session: Session, request: WorkflowRequest):
     def format_event(event_type: str, data: dict) -> str:
         return f"data: {json.dumps({'type': event_type, **data})}\n\n"
 
+    def format_thought(agent: str, message: str) -> str:
+        return format_event("thought", {"agent": agent, "message": message})
+
     try:
         customer = _target_customer(session, request)
         usage = _latest_usage(session, customer.id)
         tickets = _customer_tickets(session, customer.id)
         
         yield format_event("stage", {"agent": "Orchestrator", "message": f"Targeting customer {customer.name}..."})
-        time.sleep(0.3)
+        yield format_thought("Orchestrator", f"Initializing bounded reasoning loop for {customer.segment} account.")
+        time.sleep(0.4)
 
         yield format_event("stage", {"agent": "Analyst", "message": "Analyzing usage and ticket data..."})
         analyst = analyst_stage(customer, usage, tickets)
-        time.sleep(0.3)
+        yield format_thought("Analyst", f"Detected {analyst.usage_change_pct:.0f}% usage shift and {analyst.open_escalations} active P1/P2 escalations.")
+        yield format_thought("Analyst", "Calculating revenue impact across the renewal window...")
+        time.sleep(0.5)
         
         yield format_event("stage", {"agent": "Researcher", "message": "Gathering unstructured evidence..."})
         evidence = researcher_stage(customer, usage, tickets)
-        time.sleep(0.3)
+        yield format_thought("Researcher", f"Synthesized {len(evidence)} evidence points from support logs and usage history.")
+        time.sleep(0.4)
         
         yield format_event("stage", {"agent": "Planner Agent", "message": "Drafting initial strategies..."})
         planner = planner_stage(customer, analyst)
-        time.sleep(0.3)
+        yield format_thought("Planner Agent", "Prioritizing retention-first recovery paths over commercial fallback.")
+        time.sleep(0.4)
         
         risk_review = risk_stage(customer, analyst, planner)
         
         if llm_is_enabled():
             for i in range(settings.llm_debate_iterations):
                 yield format_event("stage", {"agent": "Planner Agent", "message": f"Refining strategy package with LLM (iteration {i+1})..."})
+                yield format_thought("Planner Agent", "Generating targeted remediation steps based on analyst summary.")
                 planner = asyncio.run(_maybe_llm_planner(request, customer, analyst, evidence, planner, risk_review))
                 
                 yield format_event("stage", {"agent": "Risk/Compliance Agent", "message": "Reviewing strategy against compliance checks..."})
+                yield format_thought("Risk/Compliance Agent", "Cross-referencing proposed actions with account governance rules.")
                 risk_review = asyncio.run(_maybe_llm_risk(customer, planner, risk_review))
                 
                 if risk_review.verdict == "pass":
                     yield format_event("stage", {"agent": "Risk/Compliance Agent", "message": "Strategies passed compliance checks."})
-                    time.sleep(0.2)
+                    yield format_thought("Risk/Compliance Agent", "No material blockers found. Strategy is ready for executive approval.")
+                    time.sleep(0.3)
                     break
                 else:
                     yield format_event("stage", {"agent": "Risk/Compliance Agent", "message": f"Blocker found: {risk_review.concerns[0] if risk_review.concerns else 'Needs revision'}."})
+                    yield format_thought("Arbiter Agent", "Directing Planner to revise strategies based on compliance concerns.")
         else:
             yield format_event("stage", {"agent": "Risk/Compliance Agent", "message": "Applying deterministic risk review..."})
-            time.sleep(0.3)
+            yield format_thought("Risk/Compliance Agent", "Validating against hard constraints (escalation load, adoption floor).")
+            time.sleep(0.4)
             
         yield format_event("stage", {"agent": "Arbiter Agent", "message": "Evaluating debate and finalizing recommendation..."})
         arbiter = arbiter_stage(customer, planner, risk_review)
-        time.sleep(0.3)
+        yield format_thought("Arbiter Agent", f"Finalizing path: '{arbiter.finalRecommendation[:40]}...' with {arbiter.confidenceLabel.lower()}.")
+        time.sleep(0.4)
         
         yield format_event("stage", {"agent": "Comms Agent", "message": "Drafting executive summary..."})
         summary = comms_summary(customer, analyst, arbiter)
         summary = asyncio.run(_maybe_llm_summary(customer, summary, arbiter))
+        yield format_thought("Comms Agent", "Optimizing summary for executive consumption and audit clarity.")
+        time.sleep(0.3)
         
         # Save to DB
         yield format_event("stage", {"agent": "Orchestrator", "message": "Saving workflow package to audit log..."})
@@ -795,6 +811,7 @@ def stream_bounded_workflow(session: Session, request: WorkflowRequest):
         
     except Exception as exc:
         yield format_event("error", {"message": str(exc)})
+
 
 def list_workflows(session: Session, customer_id: str | None = None) -> list[WorkflowRunSummary]:
     query = select(WorkflowRun)

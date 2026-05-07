@@ -11,6 +11,8 @@ import { ActionCard } from "@/components/action-card";
 import { EvidencePanel } from "@/components/evidence-panel";
 import { LaneSection } from "@/components/lane-section";
 import { StatePanel } from "@/components/state-panel";
+import { ReasoningTrace } from "@/components/reasoning-trace";
+import { DualRiskEngine } from "@/components/risk-dial";
 import { executeAction, getCustomerById, getLatestWorkflow, listWorkflows, streamAsk, submitAsk, submitFeedback } from "@/lib/service";
 
 function makeDefaultPrompt(customerName?: string) {
@@ -30,7 +32,7 @@ export default function WorkflowPage() {
     "overview",
   );
   const [isPromptExpanded, setIsPromptExpanded] = useState(true);
-  const [streamEvents, setStreamEvents] = useState<{agent: string, message: string}[]>([]);
+  const [streamEvents, setStreamEvents] = useState<{type: "stage" | "thought", agent: string, message: string}[]>([]);
   const [history, setHistory] = useState<WorkflowRunSummary[]>([]);
   const [isPending, startTransition] = useTransition();
 
@@ -126,7 +128,7 @@ export default function WorkflowPage() {
         const response = await streamAsk(
           { prompt, focusCustomerId: customerId ?? undefined },
           (event) => {
-             setStreamEvents(prev => [...prev, { agent: event.agent, message: event.message }]);
+             setStreamEvents(prev => [...prev, { type: event.type, agent: event.agent, message: event.message }]);
           }
         );
         setWorkflow(response);
@@ -271,19 +273,14 @@ export default function WorkflowPage() {
                 </p>
               </>
             )}
-{isPending ? (
-              <div className="stream-events-container" style={{ marginTop: "1rem", display: "flex", flexDirection: "column", gap: "0.5rem" }}>
-                 {streamEvents.map((evt, i) => (
-                    <div key={i} className="stream-event" style={{ padding: "0.75rem", background: "var(--surface-sunken)", borderRadius: "var(--radius-sm)", borderLeft: "3px solid var(--accent-primary)", animation: "fadeIn 0.3s ease-out" }}>
-                       <strong style={{ display: "block", fontSize: "0.85rem", color: "var(--text-muted)", marginBottom: "0.25rem" }}>{evt.agent}</strong>
-                       <span style={{ fontSize: "0.95rem" }}>{evt.message}</span>
-                    </div>
-                 ))}
-                 <StatePanel
-                   title="Generating workflow package"
-                   message="StratIQ is collecting evidence, drafting the recommendation set, and preparing the approval package."
-                   tone="loading"
-                 />
+            {isPending ? (
+              <div className="workflow-status-container" style={{ marginTop: "1rem" }}>
+                <StatePanel
+                  title="Generating workflow package"
+                  message="StratIQ is collecting evidence, drafting the recommendation set, and preparing the approval package."
+                  tone="loading"
+                />
+                <ReasoningTrace events={streamEvents} />
               </div>
             ) : null}
           </div>
@@ -391,27 +388,32 @@ export default function WorkflowPage() {
                     </div>
                   </article>
                 ) : null}
-
                 {activePanel === "risk" ? (
-                  <article className="agent-item">
-                    <div className="lane-card__title" style={{ marginBottom: "0.5rem" }}>
-                      <h3 style={{ fontSize: "1rem" }}>{workflow.riskReview.agent}</h3>
-                      <span className="eyebrow">{workflow.riskReview.verdict}</span>
-                    </div>
-                    <p>{workflow.riskReview.critique}</p>
-                    <div className="driver-list" style={{ marginTop: "0.8rem" }}>
-                      {workflow.riskReview.concerns.map((concern) => (
-                        <div key={concern} className="driver-item">
-                          {concern}
-                        </div>
-                      ))}
-                      {workflow.riskReview.requiredChecks.map((check) => (
-                        <div key={check} className="driver-item">
-                          Required check: {check}
-                        </div>
-                      ))}
-                    </div>
-                  </article>
+                  <div style={{ display: "grid", gap: "1rem" }}>
+                    <DualRiskEngine 
+                      quantitative={workflow.riskReview.quantitative_score} 
+                      qualitative={workflow.riskReview.qualitative_score} 
+                    />
+                    <article className="agent-item">
+                      <div className="lane-card__title" style={{ marginBottom: "0.5rem" }}>
+                        <h3 style={{ fontSize: "1rem" }}>{workflow.riskReview.agent}</h3>
+                        <span className="eyebrow">{workflow.riskReview.verdict}</span>
+                      </div>
+                      <p>{workflow.riskReview.critique}</p>
+                      <div className="driver-list" style={{ marginTop: "0.8rem" }}>
+                        {workflow.riskReview.concerns.map((concern) => (
+                          <div key={concern} className="driver-item">
+                            {concern}
+                          </div>
+                        ))}
+                        {workflow.riskReview.requiredChecks.map((check) => (
+                          <div key={check} className="driver-item">
+                            Required check: {check}
+                          </div>
+                        ))}
+                      </div>
+                    </article>
+                  </div>
                 ) : null}
 
                 {activePanel === "evidence" ? <EvidencePanel evidence={workflow.evidence} /> : null}

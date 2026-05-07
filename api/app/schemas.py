@@ -62,6 +62,8 @@ class RiskReview(BaseModel):
     critique: str
     concerns: list[str]
     requiredChecks: list[str]
+    quantitative_score: float = 0.0
+    qualitative_score: float = 0.0
 
 
 class ArbiterDecision(BaseModel):
