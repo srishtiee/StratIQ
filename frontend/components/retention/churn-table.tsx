@@ -98,5 +98,5 @@ export function ChurnTable({ data, onRowClick }: ChurnTableProps) {
     },
   ]
 
-  return <DataTable columns={columns} data={sorted} onRowClick={onRowClick} />
+  return <DataTable columns={columns} data={sorted} onRowClick={onRowClick} collapsedRows={5} />
 }

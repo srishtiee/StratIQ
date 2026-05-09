@@ -94,5 +94,5 @@ export function EmployeeRiskTable({ data, onRowClick }: EmployeeRiskTableProps) 
     },
   ]
 
-  return <DataTable columns={columns} data={sorted} onRowClick={onRowClick} />
+  return <DataTable columns={columns} data={sorted} onRowClick={onRowClick} collapsedRows={5} />
 }

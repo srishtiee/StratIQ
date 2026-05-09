@@ -1,7 +1,7 @@
 'use client'
 
 import { useState } from 'react'
-import { AlertTriangle, Zap, Clock, CheckCircle2, Upload, Loader2, Check } from 'lucide-react'
+import { AlertTriangle, Zap, Clock, CheckCircle2, Upload, Loader2, Check, ChevronDown, ChevronUp } from 'lucide-react'
 import { useMutation, useQueryClient } from '@tanstack/react-query'
 import { cn } from '@/lib/utils'
 import { useAlerts } from '@/lib/api/hooks'
@@ -57,19 +57,25 @@ function useResolveAlert() {
   })
 }
 
+const COLLAPSED_COUNT = 4
+
 export function AlertFeed() {
   const { data: alerts = [], isLoading } = useAlerts()
   const { mutate: resolve, isPending } = useResolveAlert()
   const [resolved, setResolved] = useState<Set<string>>(new Set())
   const [pending, setPending] = useState<string | null>(null)
+  const [expanded, setExpanded] = useState(false)
+
+  const visible = expanded ? alerts : alerts.slice(0, COLLAPSED_COUNT)
+  const hiddenCount = Math.max(alerts.length - COLLAPSED_COUNT, 0)
 
   return (
-    <div className="rounded-xl border border-[#e8e8ef] bg-white shadow-sm p-4 h-full flex flex-col">
+    <div className="rounded-xl border border-[#e8e8ef] bg-white shadow-sm p-4 self-start">
       <div className="flex items-center justify-between mb-3">
         <h3 className="text-sm font-medium text-gray-900">Alert Feed</h3>
         <span className="text-xs text-gray-400">{isLoading ? '…' : `${alerts.length} alerts`}</span>
       </div>
-      <div className="flex-1 space-y-2 overflow-y-auto">
+      <div className={expanded ? 'space-y-2 max-h-[480px] overflow-y-auto pr-1' : 'space-y-2'}>
         {isLoading ? (
           <div className="flex items-center justify-center py-6 text-gray-400">
             <Loader2 className="w-4 h-4 animate-spin mr-2" /> Loading alerts…
@@ -77,7 +83,7 @@ export function AlertFeed() {
         ) : alerts.length === 0 ? (
           <p className="text-xs text-gray-400 py-4 text-center">No unread alerts.</p>
         ) : (
-          alerts.map((alert: ApiNotification) => {
+          visible.map((alert: ApiNotification) => {
             const config = typeConfig[alert.type ?? ''] ?? defaultConfig
             const Icon = config.icon
             const isResolved = resolved.has(alert.id)
@@ -130,6 +136,22 @@ export function AlertFeed() {
           })
         )}
       </div>
+      {hiddenCount > 0 && (
+        <button
+          onClick={() => setExpanded(e => !e)}
+          className="mt-2 w-full flex items-center justify-center gap-1 text-[11px] text-indigo-600 hover:text-indigo-700 font-medium py-1.5 rounded-md hover:bg-indigo-50/50 transition-colors"
+        >
+          {expanded ? (
+            <>
+              <ChevronUp className="w-3 h-3" /> Show less
+            </>
+          ) : (
+            <>
+              <ChevronDown className="w-3 h-3" /> See more ({hiddenCount})
+            </>
+          )}
+        </button>
+      )}
     </div>
   )
 }

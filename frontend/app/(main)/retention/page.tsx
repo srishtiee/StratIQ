@@ -18,7 +18,7 @@ import { Badge } from '@/components/ui/badge'
 import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetFooter } from '@/components/ui/sheet'
 import { TakeActionMenu } from '@/components/shared/take-action-menu'
 import { formatCurrency } from '@/lib/utils'
-import { Mail, Loader2 } from 'lucide-react'
+import { Mail, Loader2, ChevronDown, ChevronUp } from 'lucide-react'
 import { ResponsiveContainer, LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip } from 'recharts'
 import { useCustomers, useRetentionSummary } from '@/lib/api/hooks'
 import type { ApiCustomer } from '@/lib/api/types'
@@ -57,6 +57,7 @@ export default function RetentionPage() {
   const { data: summary } = useRetentionSummary()
   const [selectedCustomer, setSelectedCustomer] = useState<ApiCustomer | null>(null)
   const [slideoverOpen, setSlideoverOpen] = useState(false)
+  const [topAtRiskExpanded, setTopAtRiskExpanded] = useState(false)
 
   const handleRowClick = (customer: ApiCustomer) => {
     setSelectedCustomer(customer)
@@ -144,7 +145,7 @@ export default function RetentionPage() {
                 <div className="lg:col-span-2 rounded-xl border border-[#e8e8ef] bg-white shadow-sm p-4">
                   <h3 className="text-sm font-medium text-gray-900 mb-3">Top At-Risk Accounts</h3>
                   <div className="space-y-2">
-                    {topAtRisk.slice(0, 5).map(c => (
+                    {(topAtRiskExpanded ? topAtRisk : topAtRisk.slice(0, 5)).map(c => (
                       <button
                         key={c.id}
                         onClick={() => handleRowClick(c)}
@@ -167,6 +168,22 @@ export default function RetentionPage() {
                       </button>
                     ))}
                   </div>
+                  {topAtRisk.length > 5 && (
+                    <button
+                      onClick={() => setTopAtRiskExpanded(e => !e)}
+                      className="mt-2 w-full flex items-center justify-center gap-1 text-[11px] text-indigo-600 hover:text-indigo-700 font-medium py-1.5 rounded-md hover:bg-indigo-50/50 transition-colors"
+                    >
+                      {topAtRiskExpanded ? (
+                        <>
+                          <ChevronUp className="w-3 h-3" /> Show less
+                        </>
+                      ) : (
+                        <>
+                          <ChevronDown className="w-3 h-3" /> See more ({topAtRisk.length - 5})
+                        </>
+                      )}
+                    </button>
+                  )}
                 </div>
               </div>
             </TabsContent>
