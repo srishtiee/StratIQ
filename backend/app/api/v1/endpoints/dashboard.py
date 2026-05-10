@@ -8,9 +8,14 @@ router = APIRouter()
 
 
 @router.get("/morning-brief")
-async def morning_brief(org_id: UUID, user_id: UUID):
-    """Return today's morning brief. Generates via AI if not already cached for today."""
-    brief = await get_or_generate_brief(org_id=org_id, user_id=user_id)
+async def morning_brief(org_id: UUID, user_id: UUID, refresh: bool = False):
+    """Return today's morning brief.
+
+    Generates via AI if not already cached for today. Pass ?refresh=true to
+    invalidate the cache and regenerate against the latest scores — useful
+    after a re-scoring run completes.
+    """
+    brief = await get_or_generate_brief(org_id=org_id, user_id=user_id, refresh=refresh)
     return {"content": brief}
 
 

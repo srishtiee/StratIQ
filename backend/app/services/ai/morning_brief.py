@@ -21,37 +21,62 @@ People Intelligence:
 - High attrition risk (score ≥ 70): {high_risk_employees}
 - Avg engagement score: {avg_engagement}
 - Latest AI re-scoring trigger: {last_people_trigger}
+- **Top at-risk employees (live scores, ranked):**
+{top_employees_block}
 
 Customer Retention:
 - Total active customers: {total_customers}
 - High churn risk (score ≥ 70): {high_churn_customers}
 - ARR at risk: ${arr_at_risk:,.0f}
 - Avg health score: {avg_health}
+- **Top at-risk customers (live scores, ranked):**
+{top_customers_block}
 
-Recent alerts/actions:
+Recent alerts/actions (informational only — DO NOT quote scores from these):
 {recent_context}
+
+Rules:
+- When you cite an attrition score for a named employee, use the LIVE score from the "Top at-risk employees" list. Never quote scores from the alerts/actions section — those messages can be stale.
+- When you cite a churn score or ARR for a named customer, use the LIVE values from the "Top at-risk customers" list.
+- If the live numbers contradict an alert, trust the live numbers.
 
 Write a crisp morning brief covering: the most urgent people risk, the most urgent customer risk, and one recommended focus for today. Be direct and specific — use real numbers."""
 
 
-async def get_or_generate_brief(*, org_id: UUID, user_id: UUID) -> str:
+async def get_or_generate_brief(*, org_id: UUID, user_id: UUID, refresh: bool = False) -> str:
     sb = get_supabase()
     today = datetime.now(timezone.utc).date().isoformat()
 
-    # Check cache
-    cached = fetch_one(
-        sb.table("morning_briefs")
-        .select("content")
-        .eq("org_id", str(org_id))
-        .eq("user_id", str(user_id))
-        .gte("generated_at", f"{today}T00:00:00Z")
-    )
-    if cached:
-        return cached["content"]
+    # Check cache (unless caller explicitly asked for a fresh brief)
+    if not refresh:
+        cached = fetch_one(
+            sb.table("morning_briefs")
+            .select("content")
+            .eq("org_id", str(org_id))
+            .eq("user_id", str(user_id))
+            .gte("generated_at", f"{today}T00:00:00Z")
+        )
+        if cached:
+            return cached["content"]
 
-    # Pull summary data
-    employees = sb.table("employees").select("latest_attrition_risk_score, latest_engagement_score").eq("org_id", str(org_id)).eq("status", "active").execute().data
-    customers = sb.table("customers").select("latest_churn_score, latest_health_score, latest_revenue_at_risk").eq("org_id", str(org_id)).eq("status", "active").execute().data
+    # Pull summary data — include name and department so we can build a
+    # live "top at-risk" list to ground the brief in current state.
+    employees = (
+        sb.table("employees")
+        .select("name, department, latest_attrition_risk_score, latest_engagement_score")
+        .eq("org_id", str(org_id))
+        .eq("status", "active")
+        .execute()
+        .data
+    )
+    customers = (
+        sb.table("customers")
+        .select("name, segment, arr, renewal_date, latest_churn_score, latest_health_score, latest_revenue_at_risk")
+        .eq("org_id", str(org_id))
+        .eq("status", "active")
+        .execute()
+        .data
+    )
 
     total_emp = len(employees)
     high_risk_emp = sum(1 for e in employees if (e.get("latest_attrition_risk_score") or 0) >= 70)
@@ -61,6 +86,33 @@ async def get_or_generate_brief(*, org_id: UUID, user_id: UUID) -> str:
     high_churn = sum(1 for c in customers if (c.get("latest_churn_score") or 0) >= 70)
     arr_at_risk = sum(c.get("latest_revenue_at_risk") or 0 for c in customers)
     avg_health = sum(c.get("latest_health_score") or 0 for c in customers) / max(total_cust, 1)
+
+    # Build "top at-risk" lists from LIVE scores so the brief never quotes a
+    # stale notification. Cap at 5 each — enough to write a focused brief.
+    top_employees = sorted(
+        [e for e in employees if (e.get("latest_attrition_risk_score") or 0) >= 50],
+        key=lambda e: e.get("latest_attrition_risk_score") or 0,
+        reverse=True,
+    )[:5]
+    top_employees_block = "\n".join(
+        f"  - {e['name']} ({e.get('department') or 'Unknown'}): "
+        f"attrition {int(e.get('latest_attrition_risk_score') or 0)}, "
+        f"engagement {int(e.get('latest_engagement_score') or 0)}"
+        for e in top_employees
+    ) or "  (none above moderate risk)"
+
+    top_customers = sorted(
+        [c for c in customers if (c.get("latest_churn_score") or 0) >= 50],
+        key=lambda c: c.get("latest_churn_score") or 0,
+        reverse=True,
+    )[:5]
+    top_customers_block = "\n".join(
+        f"  - {c['name']} ({c.get('segment') or 'Unknown'}): "
+        f"churn {int(c.get('latest_churn_score') or 0)}, "
+        f"ARR ${(c.get('arr') or 0):,.0f}, "
+        f"renewal {c.get('renewal_date') or 'unknown'}"
+        for c in top_customers
+    ) or "  (none above moderate risk)"
 
     # Last AI run
     last_run = (
@@ -112,10 +164,12 @@ async def get_or_generate_brief(*, org_id: UUID, user_id: UUID) -> str:
         high_risk_employees=high_risk_emp,
         avg_engagement=round(avg_eng, 1),
         last_people_trigger=last_trigger,
+        top_employees_block=top_employees_block,
         total_customers=total_cust,
         high_churn_customers=high_churn,
         arr_at_risk=arr_at_risk,
         avg_health=round(avg_health, 1),
+        top_customers_block=top_customers_block,
         recent_context=recent_context,
     )
 

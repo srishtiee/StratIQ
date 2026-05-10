@@ -166,6 +166,22 @@ export function useMorningBrief() {
   })
 }
 
+export function useRefreshMorningBrief() {
+  const auth = useAuth()
+  const orgId = auth?.orgId ?? ''
+  const userId = auth?.userId ?? ''
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: () =>
+      apiFetch<{ content: string }>(
+        `/dashboard/morning-brief?org_id=${orgId}&user_id=${userId}&refresh=true`
+      ).then(r => r.content),
+    onSuccess: (content) => {
+      queryClient.setQueryData(['morning-brief', orgId, userId], content)
+    },
+  })
+}
+
 export function useUploads() {
   const auth = useAuth()
   const orgId = auth?.orgId ?? ''

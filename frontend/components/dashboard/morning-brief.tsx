@@ -1,16 +1,17 @@
 'use client'
 
-import { Sparkles, ArrowRight, AlertTriangle, Users, Loader2 } from 'lucide-react'
+import { Sparkles, ArrowRight, AlertTriangle, Users, Loader2, RefreshCw } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { MarkdownLite } from '@/components/shared/markdown-lite'
 import Link from 'next/link'
-import { useMorningBrief } from '@/lib/api/hooks'
+import { useMorningBrief, useRefreshMorningBrief } from '@/lib/api/hooks'
 
 export function MorningBrief() {
   const today = new Date().toLocaleDateString('en-US', {
     weekday: 'long', month: 'long', day: 'numeric', year: 'numeric',
   })
   const { data: brief, isLoading } = useMorningBrief()
+  const refresh = useRefreshMorningBrief()
 
   return (
     <div className="relative rounded-xl border border-indigo-200 overflow-hidden bg-gradient-to-r from-indigo-50/60 to-white">
@@ -23,9 +24,19 @@ export function MorningBrief() {
               </div>
               <span className="text-xs font-medium text-indigo-600">AI Morning Brief</span>
               <span className="text-xs text-gray-400 ml-1">{today}</span>
+              <button
+                onClick={() => refresh.mutate()}
+                disabled={refresh.isPending || isLoading}
+                aria-label="Regenerate brief with latest scores"
+                title="Regenerate with latest scores"
+                className="ml-auto inline-flex items-center gap-1 text-[11px] text-indigo-600 hover:text-indigo-700 disabled:opacity-50"
+              >
+                <RefreshCw className={`w-3 h-3 ${refresh.isPending ? 'animate-spin' : ''}`} />
+                {refresh.isPending ? 'Regenerating…' : 'Refresh'}
+              </button>
             </div>
             <div className="text-sm text-gray-700 leading-relaxed max-w-3xl min-h-[3rem]">
-              {isLoading ? (
+              {isLoading || refresh.isPending ? (
                 <span className="flex items-center gap-2 text-gray-400">
                   <Loader2 className="w-3.5 h-3.5 animate-spin" /> Generating your brief…
                 </span>
