@@ -1,0 +1,34 @@
+import type { Metadata } from "next";
+import type { CSSProperties } from "react";
+import { AppShell } from "@/components/app-shell";
+import { AuthGate } from "@/components/auth-gate";
+import "./globals.css";
+
+export const metadata: Metadata = {
+  title: "StratIQ",
+  description: "Executive churn strategy workflow prototype",
+};
+
+export default function RootLayout({
+  children,
+}: Readonly<{
+  children: React.ReactNode;
+}>) {
+  return (
+    <html
+      lang="en"
+      style={
+        {
+          "--font-display": '"Iowan Old Style", "Palatino Linotype", "Book Antiqua", Georgia, serif',
+          "--font-body": '"Avenir Next", "Segoe UI", "Helvetica Neue", Arial, sans-serif',
+        } as CSSProperties
+      }
+    >
+      <body>
+        <AuthGate>
+          <AppShell>{children}</AppShell>
+        </AuthGate>
+      </body>
+    </html>
+  );
+}
