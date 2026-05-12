@@ -20,6 +20,30 @@ export interface ApiEmployee {
   } | null
 }
 
+export interface ApiEmployeeScore {
+  scored_at: string
+  attrition_risk_score: number | null
+  engagement_score: number | null
+  performance_score: number | null
+  ai_rationale: string | null
+  contributing_factors: Record<string, unknown> | null
+  trigger_type: string | null
+}
+
+export interface ApiEmployeeReasoning {
+  reasoning: string
+  score_before: number | null
+  score_after: number | null
+  delta: number | null
+  factors: Record<string, unknown> | null
+  created_at: string
+}
+
+export interface ApiEmployeeDetail extends ApiEmployee {
+  employee_scores: ApiEmployeeScore[]
+  ai_entity_reasoning: ApiEmployeeReasoning[]
+}
+
 export interface ApiCustomer {
   id: string
   name: string
@@ -33,6 +57,30 @@ export interface ApiCustomer {
   latest_revenue_at_risk: number | null
   scores_last_updated_at: string | null
   user_profiles: { name: string } | null
+}
+
+export interface ApiCustomerScore {
+  scored_at: string
+  churn_score: number | null
+  health_score: number | null
+  revenue_at_risk: number | null
+  ai_rationale: string | null
+  contributing_factors: Record<string, unknown> | null
+  trigger_type: string | null
+}
+
+export interface ApiCustomerReasoning {
+  reasoning: string
+  score_before: number | null
+  score_after: number | null
+  delta: number | null
+  factors: Record<string, unknown> | null
+  created_at: string
+}
+
+export interface ApiCustomerDetail extends ApiCustomer {
+  customer_scores: ApiCustomerScore[]
+  ai_entity_reasoning: ApiCustomerReasoning[]
 }
 
 export type ApiActionType = 'task' | 'email_send' | 'pdf_report' | 'meeting_ics'

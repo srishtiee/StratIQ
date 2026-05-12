@@ -38,22 +38,47 @@ async def list_customers(
 
 @router.get("/customers/{customer_id}")
 async def get_customer(customer_id: UUID, org_id: UUID):
-    """Return a single customer with full scoring history, AI reasoning, and extracted call note signals."""
+    """Return a single customer with full scoring history, AI reasoning, and extracted call note signals.
+
+    `ai_entity_reasoning` has no foreign-key relationship to customers (it uses a
+    generic entity_id column), so we fetch it in a separate query rather than
+    relying on PostgREST auto-joins.
+    """
     sb = get_supabase()
     customer = (
         sb.table("customers")
         .select(
             "*, "
-            "customer_scores(*, created_at), "
-            "csm_notes(id, note_type, meeting_date, ai_extracted_signals, created_at), "
-            "ai_entity_reasoning(reasoning, score_before, score_after, delta, factors, created_at)"
+            "customer_scores(*), "
+            "csm_notes(id, note_type, meeting_date, ai_extracted_signals, created_at)"
         )
         .eq("id", str(customer_id))
         .eq("org_id", str(org_id))
         .single()
         .execute()
+        .data
     )
-    return customer.data
+
+    customer["customer_scores"] = sorted(
+        customer.get("customer_scores") or [],
+        key=lambda s: s.get("scored_at") or "",
+        reverse=True,
+    )
+
+    reasoning = (
+        sb.table("ai_entity_reasoning")
+        .select("reasoning, score_before, score_after, delta, factors, created_at")
+        .eq("org_id", str(org_id))
+        .eq("entity_id", str(customer_id))
+        .eq("entity_type", "customer")
+        .order("created_at", desc=True)
+        .limit(5)
+        .execute()
+        .data
+        or []
+    )
+    customer["ai_entity_reasoning"] = reasoning
+    return customer
 
 
 @router.get("/summary")

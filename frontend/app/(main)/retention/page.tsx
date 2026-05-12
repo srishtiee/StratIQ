@@ -20,7 +20,7 @@ import { TakeActionMenu } from '@/components/shared/take-action-menu'
 import { formatCurrency } from '@/lib/utils'
 import { Mail, Loader2, ChevronDown, ChevronUp } from 'lucide-react'
 import { ResponsiveContainer, LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip } from 'recharts'
-import { useCustomers, useRetentionSummary } from '@/lib/api/hooks'
+import { useCustomers, useRetentionSummary, useCustomer } from '@/lib/api/hooks'
 import type { ApiCustomer } from '@/lib/api/types'
 
 const suggestedActions = [
@@ -56,6 +56,7 @@ export default function RetentionPage() {
   const { data: customers = [], isLoading } = useCustomers()
   const { data: summary } = useRetentionSummary()
   const [selectedCustomer, setSelectedCustomer] = useState<ApiCustomer | null>(null)
+  const { data: customerDetail } = useCustomer(selectedCustomer?.id ?? null)
   const [slideoverOpen, setSlideoverOpen] = useState(false)
   const [topAtRiskExpanded, setTopAtRiskExpanded] = useState(false)
 
@@ -296,6 +297,61 @@ export default function RetentionPage() {
                     )}
                   </div>
                 </div>
+
+                {/* AI Rationale — latest reasoning from ai_entity_reasoning */}
+                {(customerDetail?.ai_entity_reasoning?.[0]?.reasoning ||
+                  customerDetail?.customer_scores?.[0]?.ai_rationale) && (
+                  <div className="rounded-lg border border-indigo-200 bg-indigo-50/40 p-3">
+                    <div className="flex items-center gap-1.5 mb-1.5">
+                      <span className="text-[10px] font-semibold text-indigo-700 uppercase tracking-wide">AI Rationale</span>
+                      {customerDetail?.ai_entity_reasoning?.[0]?.created_at && (
+                        <span className="text-[10px] text-gray-400">
+                          {new Date(customerDetail.ai_entity_reasoning[0].created_at).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}
+                        </span>
+                      )}
+                    </div>
+                    <p className="text-xs text-gray-700 leading-relaxed">
+                      {customerDetail?.ai_entity_reasoning?.[0]?.reasoning ||
+                        customerDetail?.customer_scores?.[0]?.ai_rationale}
+                    </p>
+                  </div>
+                )}
+
+                {/* Score History — last few re-scoring runs */}
+                {customerDetail?.customer_scores && customerDetail.customer_scores.length > 0 && (
+                  <div className="rounded-lg border border-[#e8e8ef] bg-white p-3">
+                    <p className="text-xs text-gray-500 mb-2">Score History</p>
+                    <div className="space-y-1.5">
+                      {customerDetail.customer_scores.slice(0, 4).map((s, i) => {
+                        const prev = customerDetail.customer_scores[i + 1]
+                        const delta =
+                          prev && s.churn_score != null && prev.churn_score != null
+                            ? Number(s.churn_score) - Number(prev.churn_score)
+                            : null
+                        return (
+                          <div key={i} className="flex items-center justify-between text-xs">
+                            <span className="text-gray-500">
+                              {new Date(s.scored_at).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}
+                              {s.trigger_type && (
+                                <span className="ml-1.5 text-[10px] text-gray-400">· {s.trigger_type}</span>
+                              )}
+                            </span>
+                            <span className="flex items-center gap-2">
+                              <span className="font-medium text-gray-800">
+                                Churn {s.churn_score != null ? Math.round(Number(s.churn_score)) : '—'}
+                              </span>
+                              {delta != null && delta !== 0 && (
+                                <span className={`text-[10px] font-medium ${delta > 0 ? 'text-red-600' : 'text-emerald-600'}`}>
+                                  {delta > 0 ? '+' : ''}{Math.round(delta)}
+                                </span>
+                              )}
+                            </span>
+                          </div>
+                        )
+                      })}
+                    </div>
+                  </div>
+                )}
 
                 <div className="rounded-lg border border-[#e8e8ef] bg-white p-3">
                   <p className="text-xs text-gray-500 mb-3 font-medium">6-Month Health Trend</p>

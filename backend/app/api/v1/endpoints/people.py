@@ -38,21 +38,46 @@ async def list_employees(
 
 @router.get("/employees/{employee_id}")
 async def get_employee(employee_id: UUID, org_id: UUID):
-    """Return a single employee with full scoring history and AI reasoning."""
+    """Return a single employee with full scoring history and AI reasoning.
+
+    `ai_entity_reasoning` has no foreign-key relationship to employees (it
+    uses a generic entity_id column), so we fetch it in a separate query
+    rather than relying on PostgREST auto-joins.
+    """
     sb = get_supabase()
     employee = (
         sb.table("employees")
-        .select(
-            "*, compensation(*), "
-            "employee_scores(*, created_at), "
-            "ai_entity_reasoning(reasoning, score_before, score_after, delta, factors, created_at)"
-        )
+        .select("*, compensation(*), employee_scores(*)")
         .eq("id", str(employee_id))
         .eq("org_id", str(org_id))
         .single()
         .execute()
+        .data
     )
-    return employee.data
+
+    # Latest scoring history first (newest at index 0) — used by the slideover
+    # to render the "score evolved from X to Y" trend.
+    employee["employee_scores"] = sorted(
+        employee.get("employee_scores") or [],
+        key=lambda s: s.get("scored_at") or "",
+        reverse=True,
+    )
+
+    # AI reasoning entries, fetched manually (no FK auto-join available).
+    reasoning = (
+        sb.table("ai_entity_reasoning")
+        .select("reasoning, score_before, score_after, delta, factors, created_at")
+        .eq("org_id", str(org_id))
+        .eq("entity_id", str(employee_id))
+        .eq("entity_type", "employee")
+        .order("created_at", desc=True)
+        .limit(5)
+        .execute()
+        .data
+        or []
+    )
+    employee["ai_entity_reasoning"] = reasoning
+    return employee
 
 
 @router.get("/summary")

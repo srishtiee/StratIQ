@@ -6,7 +6,9 @@ import { useAuth } from '@/lib/auth/store'
 import type { Source } from './query-stream'
 import type {
   ApiEmployee,
+  ApiEmployeeDetail,
   ApiCustomer,
+  ApiCustomerDetail,
   ApiAction,
   ApiKpi,
   ApiKpiHistory,
@@ -26,6 +28,19 @@ export function useEmployees(department?: string) {
         `/people/employees?org_id=${orgId}${department ? `&department=${encodeURIComponent(department)}` : ''}`
       ).then(r => r.data),
     enabled: !!orgId,
+  })
+}
+
+export function useEmployee(employeeId: string | null) {
+  const auth = useAuth()
+  const orgId = auth?.orgId ?? ''
+  return useQuery({
+    queryKey: ['employee', employeeId, orgId],
+    queryFn: () =>
+      apiFetch<ApiEmployeeDetail>(
+        `/people/employees/${employeeId}?org_id=${orgId}`
+      ),
+    enabled: !!employeeId && !!orgId,
   })
 }
 
@@ -52,6 +67,19 @@ export function useCustomers(segment?: string) {
         `/retention/customers?org_id=${orgId}${segment ? `&segment=${encodeURIComponent(segment)}` : ''}`
       ).then(r => r.data),
     enabled: !!orgId,
+  })
+}
+
+export function useCustomer(customerId: string | null) {
+  const auth = useAuth()
+  const orgId = auth?.orgId ?? ''
+  return useQuery({
+    queryKey: ['customer', customerId, orgId],
+    queryFn: () =>
+      apiFetch<ApiCustomerDetail>(
+        `/retention/customers/${customerId}?org_id=${orgId}`
+      ),
+    enabled: !!customerId && !!orgId,
   })
 }
 

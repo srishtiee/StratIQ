@@ -20,7 +20,7 @@ import { TakeActionMenu } from '@/components/shared/take-action-menu'
 import { Badge } from '@/components/ui/badge'
 import { Download, FileText, Loader2 } from 'lucide-react'
 import { formatCurrency } from '@/lib/utils'
-import { useEmployees } from '@/lib/api/hooks'
+import { useEmployees, useEmployee } from '@/lib/api/hooks'
 import type { ApiEmployee } from '@/lib/api/types'
 
 const suggestedActions = [
@@ -44,6 +44,7 @@ export default function PeoplePage() {
   const tab = searchParams.get('tab') ?? 'overview'
   const { data: employees = [], isLoading } = useEmployees()
   const [selectedEmployee, setSelectedEmployee] = useState<ApiEmployee | null>(null)
+  const { data: employeeDetail } = useEmployee(selectedEmployee?.id ?? null)
   const [slideoverOpen, setSlideoverOpen] = useState(false)
 
   const handleRowClick = (employee: ApiEmployee) => {
@@ -367,6 +368,61 @@ export default function PeoplePage() {
                           </div>
                         </>
                       )}
+                    </div>
+                  </div>
+                )}
+
+                {/* AI Rationale — latest reasoning from ai_entity_reasoning */}
+                {(employeeDetail?.ai_entity_reasoning?.[0]?.reasoning ||
+                  employeeDetail?.employee_scores?.[0]?.ai_rationale) && (
+                  <div className="rounded-lg border border-indigo-200 bg-indigo-50/40 p-3">
+                    <div className="flex items-center gap-1.5 mb-1.5">
+                      <span className="text-[10px] font-semibold text-indigo-700 uppercase tracking-wide">AI Rationale</span>
+                      {employeeDetail?.ai_entity_reasoning?.[0]?.created_at && (
+                        <span className="text-[10px] text-gray-400">
+                          {new Date(employeeDetail.ai_entity_reasoning[0].created_at).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}
+                        </span>
+                      )}
+                    </div>
+                    <p className="text-xs text-gray-700 leading-relaxed">
+                      {employeeDetail?.ai_entity_reasoning?.[0]?.reasoning ||
+                        employeeDetail?.employee_scores?.[0]?.ai_rationale}
+                    </p>
+                  </div>
+                )}
+
+                {/* Score History — last few re-scoring runs */}
+                {employeeDetail?.employee_scores && employeeDetail.employee_scores.length > 0 && (
+                  <div className="rounded-lg border border-[#e8e8ef] bg-white p-3">
+                    <p className="text-xs text-gray-500 mb-2">Score History</p>
+                    <div className="space-y-1.5">
+                      {employeeDetail.employee_scores.slice(0, 4).map((s, i) => {
+                        const prev = employeeDetail.employee_scores[i + 1]
+                        const delta =
+                          prev && s.attrition_risk_score != null && prev.attrition_risk_score != null
+                            ? s.attrition_risk_score - prev.attrition_risk_score
+                            : null
+                        return (
+                          <div key={i} className="flex items-center justify-between text-xs">
+                            <span className="text-gray-500">
+                              {new Date(s.scored_at).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}
+                              {s.trigger_type && (
+                                <span className="ml-1.5 text-[10px] text-gray-400">· {s.trigger_type}</span>
+                              )}
+                            </span>
+                            <span className="flex items-center gap-2">
+                              <span className="font-medium text-gray-800">
+                                Attrition {s.attrition_risk_score != null ? Math.round(Number(s.attrition_risk_score)) : '—'}
+                              </span>
+                              {delta != null && delta !== 0 && (
+                                <span className={`text-[10px] font-medium ${delta > 0 ? 'text-red-600' : 'text-emerald-600'}`}>
+                                  {delta > 0 ? '+' : ''}{Math.round(delta)}
+                                </span>
+                              )}
+                            </span>
+                          </div>
+                        )
+                      })}
                     </div>
                   </div>
                 )}
