@@ -11,7 +11,7 @@ from app.db.client import get_supabase, fetch_one
 
 _claude = anthropic.AsyncAnthropic(api_key=settings.anthropic_api_key)
 
-_BRIEF_PROMPT = """You are StratIQ, an AI executive assistant. Generate a concise morning brief (5-7 sentences max).
+_BRIEF_PROMPT = """You are StratIQ, an AI executive assistant. Generate a concise morning brief.
 
 Today's date: {today}
 Organization data:
@@ -21,7 +21,7 @@ People Intelligence:
 - High attrition risk (score ≥ 70): {high_risk_employees}
 - Avg engagement score: {avg_engagement}
 - Latest AI re-scoring trigger: {last_people_trigger}
-- **Top at-risk employees (live scores, ranked):**
+- Top at-risk employees (live scores, ranked):
 {top_employees_block}
 
 Customer Retention:
@@ -29,18 +29,24 @@ Customer Retention:
 - High churn risk (score ≥ 70): {high_churn_customers}
 - ARR at risk: ${arr_at_risk:,.0f}
 - Avg health score: {avg_health}
-- **Top at-risk customers (live scores, ranked):**
+- Top at-risk customers (live scores, ranked):
 {top_customers_block}
 
 Recent alerts/actions (informational only — DO NOT quote scores from these):
 {recent_context}
 
-Rules:
-- When you cite an attrition score for a named employee, use the LIVE score from the "Top at-risk employees" list. Never quote scores from the alerts/actions section — those messages can be stale.
-- When you cite a churn score or ARR for a named customer, use the LIVE values from the "Top at-risk customers" list.
-- If the live numbers contradict an alert, trust the live numbers.
+Data rules:
+- When you cite a score for a named employee or customer, use the LIVE values from the "Top at-risk" lists above. Never quote scores from the alerts/actions section — those messages can be stale. If they conflict with the live values, trust the live values.
 
-Write a crisp morning brief covering: the most urgent people risk, the most urgent customer risk, and one recommended focus for today. Be direct and specific — use real numbers."""
+OUTPUT FORMAT — match this exactly. Each labelled section is its own paragraph, separated by a blank line:
+
+**People Risk:** [2-3 sentences naming the most urgent at-risk employee, their score, and what's driving it. Reference one or two other employees if it tells a pattern.]
+
+**Customer Risk:** [2-3 sentences naming the most urgent at-risk account, churn score, ARR, days to renewal, and the active intervention status. Mention one secondary account if relevant.]
+
+**Recommended Focus for Today:** [1-2 sentences. A direct call to action — what the executive should do first, why, and the tradeoff if they delay.]
+
+Do NOT add any other headings, lists, or summary lines. No `# heading` lines, no `---` rules. Just the three labelled paragraphs in that order, separated by blank lines."""
 
 
 async def get_or_generate_brief(*, org_id: UUID, user_id: UUID, refresh: bool = False) -> str:

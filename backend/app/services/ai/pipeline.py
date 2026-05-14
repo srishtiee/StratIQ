@@ -34,6 +34,11 @@ Current question: {question}
 
 If the current question is a follow-up that depends on prior turns (e.g. "what about Sales?", "show me their compensation"), produce a sql_hint that resolves the reference into a self-contained description.
 
+Rules for needs_rag:
+- Set needs_rag = true whenever the question is about WHY an employee or customer is at risk, asks for themes/patterns/quotes/sentiment, or references survey responses, CSM notes, calls, or any qualitative signal. This includes "why" questions, "what's driving" questions, and any question that asks the system to surface evidence.
+- Set needs_rag = true for entity-focused questions (entity_focus = 'employee' or 'customer') unless the question is purely a numeric aggregate (e.g. "what's our total ARR?", "how many employees do we have?").
+- Set needs_rag = false only when the answer can be fully computed from structured numbers and the question doesn't ask for explanation or qualitative context.
+
 Return ONLY a valid JSON object:
 {{
   "needs_sql": true | false,
@@ -332,10 +337,15 @@ async def run_query_pipeline(
 
     # Step 3.5: Entity cards — when the question is about a list of employees or
     # customers, send structured card data to the UI alongside the narrative.
+    # We also remember which entities ended up on the cards so RAG can scope
+    # citations to exactly those entities (and the narrative stays grounded
+    # in the same set the user is looking at).
+    cards_entity_ids: list[str] = []
     if entity_focus in ("employee", "customer") and sql_results:
         try:
             cards = await build_entity_cards(sb, org_id, entity_focus, sql_results)
             if cards:
+                cards_entity_ids = [c["entity_id"] for c in cards if c.get("entity_id")]
                 yield _sse("entity_cards", {"entity_type": entity_focus, "cards": cards})
         except Exception:
             # Non-fatal — narrative response still renders.
@@ -350,6 +360,7 @@ async def run_query_pipeline(
             query_text=question,
             org_id=org_id,
             entity_type=entity_focus if entity_focus in ("employee", "customer") else None,
+            entity_ids=cards_entity_ids or None,
         )
         sources = [
             {
