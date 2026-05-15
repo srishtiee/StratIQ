@@ -104,6 +104,25 @@ export function ActionInlineForm({ initialAction }: Props) {
   const isTerminal = ['completed', 'failed', 'rejected'].includes(action.status)
   const Icon = TYPE_ICONS[action.type] ?? CheckSquare
 
+  // Transient "Saved" indicator shown right after a successful save.
+  const [savedFlash, setSavedFlash] = useState(false)
+
+  // Whether the local form has unsaved edits relative to the persisted action.
+  // For non-task types, the primary button is the "send/generate/invite" trigger,
+  // so it should always be visible — we only gate visibility for tasks where
+  // the primary button is just a save (no execute).
+  const isDirty = useMemo(() => {
+    if (title !== (action.title ?? '')) return true
+    const payload = (action.payload ?? {}) as Record<string, unknown>
+    if (action.type === 'task') {
+      if (taskFields.notes !== ((payload.notes as string) ?? '')) return true
+      if (taskFields.due_date !== (action.due_date ?? '')) return true
+      if (taskFields.priority !== ((action.priority ?? '') as string)) return true
+      return false
+    }
+    return true
+  }, [action, title, taskFields])
+
   // Build current payload from local state.
   const buildUpdates = useMemo(() => {
     return () => {
@@ -153,11 +172,15 @@ export function ActionInlineForm({ initialAction }: Props) {
       if (action.status === 'pending_approval') {
         await approveMutation.mutateAsync(action.id)
       }
-      // Tasks are tracked todos — "Create Task" saves them, it doesn't execute
+      // Tasks are tracked todos — "Save changes" saves them, it doesn't execute
       // and complete them. The user marks them done later via the Mark Done
       // button below or from the Actions Center.
       if (action.type !== 'task') {
         await executeMutation.mutateAsync(action.id)
+      } else {
+        // Flash a "Saved" indicator so the user sees that their edits stuck.
+        setSavedFlash(true)
+        setTimeout(() => setSavedFlash(false), 2500)
       }
     } catch (exc) {
       setErrorMsg(exc instanceof Error ? exc.message : 'Something went wrong')
@@ -203,10 +226,15 @@ export function ActionInlineForm({ initialAction }: Props) {
     if (action.status === 'pending_approval') return 'Approve & Send'
     if (action.type === 'email_send') return 'Send Email'
     if (action.type === 'meeting_ics') return 'Send Invite'
-    if (action.type === 'task') return 'Create Task'
+    // Tasks: the action row is created on AI draft. Subsequent presses save edits.
+    if (action.type === 'task') return 'Save changes'
     if (action.type === 'pdf_report') return 'Generate'
     return 'Approve'
   })()
+
+  // Tasks only show the primary "Save changes" button when there are unsaved edits.
+  // Other action types always show their primary button (it's the execute trigger).
+  const showPrimary = action.type !== 'task' || isDirty
 
   return (
     <div className="mt-3 rounded-lg border border-gray-200 bg-white overflow-hidden">
@@ -311,20 +339,22 @@ export function ActionInlineForm({ initialAction }: Props) {
           )}
 
           <div className="flex items-center gap-1.5 pt-1">
-            <button
-              onClick={handleApprove}
-              disabled={
-                updateMutation.isPending ||
-                approveMutation.isPending ||
-                executeMutation.isPending
-              }
-              className={BTN_PRIMARY + ' h-7'}
-            >
-              {(updateMutation.isPending || approveMutation.isPending || executeMutation.isPending) ? (
-                <Loader2 className="w-3 h-3 animate-spin" />
-              ) : null}
-              {primaryLabel}
-            </button>
+            {showPrimary && (
+              <button
+                onClick={handleApprove}
+                disabled={
+                  updateMutation.isPending ||
+                  approveMutation.isPending ||
+                  executeMutation.isPending
+                }
+                className={BTN_PRIMARY + ' h-7'}
+              >
+                {(updateMutation.isPending || approveMutation.isPending || executeMutation.isPending) ? (
+                  <Loader2 className="w-3 h-3 animate-spin" />
+                ) : null}
+                {primaryLabel}
+              </button>
+            )}
             {action.type === 'task' && action.status === 'draft' && (
               <button
                 onClick={handleMarkDone}
@@ -343,6 +373,11 @@ export function ActionInlineForm({ initialAction }: Props) {
               {deleteMutation.isPending ? <Loader2 className="w-3 h-3 animate-spin" /> : null}
               Cancel
             </button>
+            {savedFlash && (
+              <span className="inline-flex items-center gap-1 text-[11px] text-emerald-600 ml-auto">
+                <CheckCircle2 className="w-3 h-3" /> Saved
+              </span>
+            )}
           </div>
         </div>
       )}
